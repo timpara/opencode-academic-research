@@ -22,26 +22,27 @@
 
 *Estimates based on a ~15,000-word paper with ~60 references. Actual usage varies with paper length, revision rounds, and dialogue depth. Costs at Anthropic API pricing as of April 2026.*
 
-## Recommended Claude Code settings
+## Recommended OpenCode settings
 
-| Setting | What it does | How to enable | Docs |
-|---|---|---|---|
-| **Agent Team** (optional) | Enables `TeamCreate` / `SendMessage` tools for manual multi-agent coordination. **ARS's internal parallelization does not require this flag** — skills spawn subagents via the built-in `Agent` tool directly. Only useful if you want to manually orchestrate persistent team workflows across sessions. | Set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (research preview) | Experimental feature — no stable docs yet |
-| **Skip Permissions** | Bypasses per-tool confirmation prompts, enabling uninterrupted autonomous execution across all pipeline stages | Launch with `claude --dangerously-skip-permissions` | [Permissions](https://docs.anthropic.com/en/docs/claude-code/cli-reference) · [Advanced Usage](https://docs.anthropic.com/en/docs/claude-code/advanced) |
+| Setting | What it does | How to enable |
+|---|---|---|
+| **Permission rules** | Pre-approve the Bash, Read, Write, and Edit operations the pipeline needs, so OpenCode does not stop and ask on every tool call during a long-running stage. | Edit `~/.config/opencode/opencode.json` (or the `opencode.json` shipped in this repo) and add patterns under the `permission` key. The repo ships sensible defaults for ARS workflows. |
+| **Model selection** | Routes the dispatching session and its sub-agents through your chosen provider (Anthropic, OpenAI, GitHub Copilot, etc.). | Set `model` in `opencode.json` or pick at session start. ARS skills are model-agnostic and inherit whichever model the parent session uses. |
+| **Long-running mode** | OpenCode does not have a single "skip permissions" flag. The same effect is achieved by listing the tool patterns the pipeline needs in the `permission.allow` block, so you opt in to specific operations rather than disabling the safety layer wholesale. | See `opencode.json` and `docs/OPENCODE_NOTES.md` for the recommended allow-list. |
 
-> **⚠️ Skip Permissions**: This flag disables all tool-use confirmation dialogs. Use at your own discretion — it is convenient for trusted, long-running pipelines but removes the safety net of manual approval. Only enable this in environments where you are comfortable with Claude executing file reads, writes, and shell commands without asking first.
+> **Note on safety:** OpenCode's permission model is allow-list based. Add only the patterns ARS actually needs (Bash for verification scripts, Read/Write/Edit for the working directory). Avoid `*` wildcards on Bash unless you trust everything in the pipeline.
 
-### v3.7.0 Plugin agents and model routing
+### Plugin agents and model routing (v3.7.0+ inherited)
 
-When ARS is installed as a Claude Code plugin (`/plugin install academic-research-skills`), three downstream worker agents are exposed as plugin-shipped subagents: `synthesis_agent`, `research_architect_agent`, and `report_compiler_agent`. Each declares `model: inherit` in its frontmatter, which means they run under the **dispatching session's model** rather than a pinned floor:
+Three downstream worker agents ship as separate definitions: `synthesis_agent`, `research_architect_agent`, and `report_compiler_agent`. Each declares `model: inherit` in its frontmatter, which means they run under the **dispatching session's model** rather than a pinned floor:
 
-- An Opus session running the full pipeline gets Opus agents, preserving the integrative depth those agents were designed for.
-- A Sonnet session gets Sonnet agents, matching the cost/latency profile of the parent run.
-- The agents never silently fall back to Haiku — `inherit` resolves through the parent session's model, which is itself gated by the project policy of "no Haiku for ARS runs."
+- A high-tier session running the full pipeline gets high-tier agents, preserving the integrative depth those agents were designed for.
+- A mid-tier session gets mid-tier agents, matching the cost and latency profile of the parent run.
+- The agents never silently fall back to a low-tier model — `inherit` resolves through the parent session's model, which is itself gated by the project policy of "no low-tier model for ARS runs."
 
-This means **plugin-agent token costs track the per-mode estimates above unchanged**; there is no separate plugin agent surcharge or discount, because dispatched agents inherit the same model the parent run already pays for. If you change the main session model mid-pipeline (e.g., downshift to Sonnet for a long revision pass), the next agent dispatch picks up the new floor automatically.
+This means **agent token costs track the per-mode estimates above unchanged**; there is no separate agent surcharge or discount, because dispatched agents inherit the same model the parent run already pays for. If you change the main session model mid-pipeline (for example, downshift to a cheaper model for a long revision pass), the next agent dispatch picks up the new floor automatically.
 
-Other ARS agents (`bibliography_agent`, `literature_strategist_agent`, etc.) are not plugin-exposed in v3.7.0; they remain in-skill prompt templates that the main session executes inline, with no separate model routing layer. Wider plugin-agent coverage is deferred to a future release.
+Other ARS agents (`bibliography_agent`, `literature_strategist_agent`, etc.) are not exposed as separate sub-agents in this release; they remain in-skill prompt templates that the main session executes inline, with no separate model routing layer. Wider sub-agent coverage is deferred to a future release.
 
 ## Long-running session management
 
@@ -80,7 +81,7 @@ When `ARS_PASSPORT_RESET=1` is set, every FULL checkpoint becomes a context-rese
 
 1. Run a stage to FULL checkpoint in session A.
 2. Copy the `[PASSPORT-RESET: hash=<hash>, stage=<completed>, next=<next>]` tag from the checkpoint notification.
-3. Start a fresh Claude Code session (session B) and paste `resume_from_passport=<hash>`. Optional overrides: `resume_from_passport=<hash> stage=<n> mode=<m>`.
+3. Start a fresh OpenCode session (session B) and paste `resume_from_passport=<hash>`. Optional overrides: `resume_from_passport=<hash> stage=<n> mode=<m>`.
 4. Session B loads only the passport ledger; no replay of session A's turns. The orchestrator locates the matching `kind: boundary` entry, appends a `kind: resume` entry to consume it, and continues. The resumed stage is determined by: a `stage=` CLI override if supplied, else the matched option's `next_stage` when the boundary carries a `pending_decision` (the orchestrator re-prompts the user first), else the recorded `next` field. `next` MAY be `null` when all decision branches terminate.
 
 **When reset beats continuation:**
@@ -105,7 +106,7 @@ The resume command only defines the hash and optional stage/mode overrides:
 resume_from_passport=<hash> [stage=<n>] [mode=<m>]
 ```
 
-There is no path syntax on the resume command itself. Custom passport locations are configured in the project's `CLAUDE.md` or handled by the integrator's tooling before the orchestrator is invoked.
+There is no path syntax on the resume command itself. Custom passport locations are configured in the project's `AGENTS.md` (or `CLAUDE.md` on upstream Claude Code installs) or handled by the integrator's tooling before the orchestrator is invoked.
 
 **Empirical token savings:** measurement pending a real `systematic-review` run with instrumentation. This section will be updated with observed token deltas once available; until then, no numeric claim is made. See [`../academic-pipeline/references/passport_as_reset_boundary.md`](../academic-pipeline/references/passport_as_reset_boundary.md) for the full protocol.
 
