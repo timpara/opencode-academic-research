@@ -1,6 +1,7 @@
 ---
 description: ARS academic-paper-reviewer `full` mode — simulated peer-review panel
-model: opus
+agent: build
+compatibility: opencode
 ---
 
 Trigger the `academic-paper-reviewer` skill in `full` mode. Honor explicit alternate modes when present: `quick`, `methodology-focus`, `re-review`, `guided`, or `calibration`. Uses opus per project policy for review-interpretation depth.

@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+The history below this section is the upstream `Imbad0202/academic-research-skills`
+changelog, reproduced verbatim. Entries prefixed `opencode.` apply to this
+port only and document packaging / runtime differences from upstream.
+
+## [v3.9.4.2-opencode.1] (2026-05-21) — OpenCode port
+
+Initial port of upstream `v3.9.4.2` to OpenCode. Workflow content,
+agent prompts, and Python verification scripts are unchanged from upstream.
+
+**Packaging changes**
+
+- Removed `.claude-plugin/`, `.claude/`, `hooks/hooks.json`, and
+  `scripts/announce-ars-loaded.sh`.
+- Added `opencode.json` with permission rules for `uv`, `pytest`, `ruff`,
+  and the Python verification scripts.
+- Added `package.json` declaring `@opencode-ai/plugin` as a dev
+  dependency. Run `bun install` after clone.
+- Added `pyproject.toml` so Python deps install with `uv sync --extra dev`
+  (replaces upstream `requirements-dev.txt`). Configures `ruff` and
+  `pytest`.
+- Added `install.sh` to symlink `skills/`, `commands/`, and `plugins/`
+  into `~/.config/opencode/`. Supports `--force`, `--dry-run`,
+  `--uninstall`.
+- Migrated upstream `.claude/CLAUDE.md` Routing Discipline v3.9.2 content
+  into root `AGENTS.md` so OpenCode picks it up as project instructions.
+- Converted `skills/<name>/` from symlinks-to-self into real directories.
+- Updated every skill `SKILL.md` frontmatter: added `license`,
+  `compatibility: opencode claude-code`, `allowed-tools`.
+- Updated every `commands/ars-*.md` frontmatter: replaced `model: sonnet|opus`
+  with `agent: build` and added `compatibility: opencode`. Model choice is
+  per-session in OpenCode.
+- Replaced the upstream SessionStart bash hook with
+  `plugins/ars-session-loaded.ts`, a TypeScript plugin built on
+  `@opencode-ai/plugin`. Hooks `session.created` and logs the suite
+  load. Skill auto-discovery is metadata-driven so the plugin is
+  observability-only.
+- Rewrote `README.md`, `docs/SETUP.md`, `QUICKSTART.md`, and
+  `CONTRIBUTING.md` for OpenCode invocation paths. Removed all
+  references to `/plugin marketplace add`.
+- Added `MIGRATION.md` (mapping table, frontmatter diffs,
+  hook→plugin rewrite, upstream sync checklist) and
+  `docs/OPENCODE_NOTES.md` (skill auto-discovery mechanics, plugin
+  runtime caveats).
+- Tracks upstream as the `upstream` git remote for periodic manual
+  merges. See `MIGRATION.md` §3 for the sync checklist.
+
+**Unchanged from upstream v3.9.4.2**
+
+- All four skill bundles (`deep-research`, `academic-paper`,
+  `academic-paper-reviewer`, `academic-pipeline`).
+- All 13 slash command bodies (frontmatter only changed).
+- All 124 Python files under `scripts/` (citation integrity, claim
+  faithfulness, temporal verification, bibliography client adapters).
+- All schemas, references, and shared protocols under `shared/` and
+  `agents/`.
+- The 38-agent ensemble.
+
+---
+
 ## [Unreleased]
 
 **Plugin commands (prep for v3.10 — no behavior change to existing skills):**

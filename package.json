@@ -1,0 +1,10 @@
+{
+  "name": "opencode-academic-research",
+  "version": "3.9.4.2-opencode.1",
+  "description": "OpenCode port of the Academic Research Skills suite. 4 skills, 13 slash commands, 38-agent pipeline for research, writing, peer review, and revision.",
+  "license": "CC-BY-NC-4.0",
+  "private": true,
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest"
+  }
+}

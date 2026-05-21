@@ -10,6 +10,18 @@ docs/superpowers/
 
 # Python bytecode / pytest cache.
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+
+# uv / virtualenv
+.venv/
+uv.lock
+
+# Node / opencode plugin runtime
+node_modules/
+package-lock.json
+bun.lockb
 
 # Private ROADMAP lives in claude-memory-sync (花花/roadmaps/), not this public repo
 ROADMAP.md

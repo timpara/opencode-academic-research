@@ -1,6 +1,7 @@
 ---
 description: ARS /ars-mark-read — record human-read signal for one or more citation keys
-model: sonnet
+agent: build
+compatibility: opencode
 ---
 
 Acknowledge that the user has personally read the source(s) backing the named citation key(s), so the next finalizer pass can promote `<!--ref:slug LOW-WARN-->` to `<!--ref:slug ok-->` for each acknowledged slug. Per v3.6.8 spec §3.6, the signal is stored in a session-scoped peer file `<passport-stem>_human_read_log.yaml` next to the active Material Passport; `literature_corpus[]` is adapter-owned and is NEVER mutated to carry `human_read_source`.

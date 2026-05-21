@@ -1,60 +1,53 @@
-# Contributing to Academic Research Skills
+# Contributing to opencode-academic-research
 
-Thank you for your interest in contributing. This document explains what kinds of contributions we accept and how to submit them.
+Thank you for your interest in contributing. This document explains what kinds of contributions we accept for this OpenCode port.
+
+> **Where to send your PR.** Most contributions belong upstream at [`Imbad0202/academic-research-skills`](https://github.com/Imbad0202/academic-research-skills) (workflow content, agent prompts, Python scripts) or at the maintained fork [`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills). This port only owns the OpenCode packaging layer: `opencode.json`, `package.json`, `pyproject.toml`, `plugins/`, `install.sh`, and the OpenCode-specific docs (`README.md`, `docs/SETUP.md`, `MIGRATION.md`, `docs/OPENCODE_NOTES.md`). If your change is to a `SKILL.md` body, an `agents/*.md` file, or anything under `scripts/`, please open the PR upstream first; it will flow into this repo on the next sync.
 
 ---
 
 ## How to submit a contribution
 
-ARS uses the standard **fork-and-PR** workflow. Fork the repo on GitHub, clone your fork, create a branch, make your changes, push to your fork, then open a PR against `Imbad0202/academic-research-skills`.
+This repo uses the standard **fork-and-PR** workflow. Fork on GitHub, clone your fork, create a branch, make your changes, push, then open a PR against `timpara/opencode-academic-research`.
 
-**Important**: You cannot push directly to this repo — you must fork it first and submit a PR from your fork.
+## Development workflow
+
+```bash
+# Python lint and tests
+uv run ruff check scripts/
+uv run ruff format scripts/
+uv run pytest scripts/
+
+# TypeScript plugin
+bun install
+bun build plugins/ars-session-loaded.ts --target=bun --no-bundle  # syntax check
+```
 
 ---
 
-## What we accept
+## What we accept in this repo
 
-### Community-maintained (fast merge)
+### OpenCode packaging (port-specific)
 
-These contributions can be merged quickly with minimal review:
+These changes belong here, not upstream:
 
-- **Typo and formatting fixes** — spelling, broken links, markdown rendering issues
-- **New examples** — pipeline output showcases, worked examples for specific disciplines
-- **Translation improvements** — better zh-TW or EN phrasing in READMEs or agent definitions
+- **OpenCode packaging fixes** — `opencode.json` permission rules, `package.json` dep bumps, `pyproject.toml` config, `install.sh` improvements.
+- **Plugin bugs and improvements** — anything under `plugins/`.
+- **OpenCode-specific docs** — `README.md`, `docs/SETUP.md`, `MIGRATION.md`, `docs/OPENCODE_NOTES.md`, OpenCode-port entries in `CHANGELOG.md`.
+- **Slash-command frontmatter** — when adding new OpenCode-specific frontmatter fields (the command body itself is upstream content).
 
-### Requires maintainer review
+### Upstream content (please send upstream)
 
-These need careful review because they affect system behavior:
+These changes belong at [`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills) or [`Imbad0202/academic-research-skills`](https://github.com/Imbad0202/academic-research-skills):
 
-- **Journal and field reference lists** — additions to `top_journals_by_field.md`, new discipline glossaries
-- **Evaluation sets** — gold-standard papers for calibration mode, benchmark data
-- **New reference files** — methodology guides, citation format references, domain-specific protocols
-- **Bug and drift fixes** — version inconsistencies, broken cross-references, incorrect metadata
-- **Mode changes** — new modes, trigger keyword changes, oversight level adjustments
+- Skill behavior and prompts (`skills/*/SKILL.md` body)
+- Agent definitions (`agents/*.md`, `skills/*/agents/*.md`)
+- Python verification scripts (`scripts/`)
+- Shared protocols and references (`shared/`)
+- Slash-command bodies
+- Workflow logic, evaluation sets, journal lists, schemas
 
-### Requires maintainer approval + discussion
-
-Open an issue first before submitting a PR for these:
-
-- **Agent definition changes** — modifications to any file in `*/agents/*.md`
-- **IRON RULE modifications** — any change to rules marked with the IRON RULE marker
-- **Ethics and integrity rules** — changes to the failure mode checklist, integrity protocols, or ethics review
-- **Handoff schema changes** — modifications to `shared/handoff_schemas.md`
-- **New skills or modes** — additions to the pipeline
-
-### Platform ports (community-maintained only)
-
-This repository is the reference distribution of ARS, built for Claude Code. Ports to other agent platforms (Opencode, Cursor, Continue, Aider, etc.) are accepted as community-maintained contributions. Two structural shapes are acceptable — both keep core ARS content as the source of truth:
-
-- **In-tree wrapper.** Add a top-level `<platform>/` directory in this repo (e.g. `opencode/`) containing the manifest, plugin entry, and dispatch shims. Core ARS files (`skills/*/SKILL.md`, `agents/*.md`, `shared/`, `scripts/`) remain unmodified.
-- **Sibling distribution.** A separate repository that vendors ARS workflow content with: (1) upstream commit hash pinned (e.g. in a `manifest.json`); (2) a written update / sync policy; (3) vendored content unmodified — only the outer routing / adapter layer is platform-specific.
-
-Either shape is accepted under the same maintainer-facing conditions:
-
-- **Named maintainer.** The PR description (in-tree) or repo README (sibling) must identify who will keep the port in sync with ARS minor releases (~6-week cadence) and triage platform-specific bug reports. Platform-specific issues will be redirected to that maintainer.
-- **End-to-end evidence.** Include at least one full `academic-pipeline` run on the target platform, committed under `examples/<platform>/` (in-tree) or under an `examples/` path in the sibling repo, so regressions are detectable.
-- **Model-portability note.** ARS prompts are calibrated against Claude (Opus for architecture/review, Sonnet for execution; never Haiku). The PR must document which providers/models were tested and where downstream-agent behavior diverged from the Claude baseline.
-- **Open a design issue first** before submitting the PR (for in-tree) or before requesting sibling-distribution recognition in this repo's README.
+After the upstream PR merges, run the sync procedure in [`MIGRATION.md`](MIGRATION.md) §3 to pull it into this repo.
 
 ---
 
@@ -72,7 +65,7 @@ Either shape is accepted under the same maintainer-facing conditions:
 
 ### Maintainer
 
-The repo is maintained by [Cheng-I Wu](https://github.com/Imbad0202) (HEEACT). The maintainer has final say on all merges.
+The upstream repo is maintained by [Cheng-I Wu](https://github.com/Imbad0202) (HEEACT). The maintained fork and this OpenCode port are maintained by [timpara](https://github.com/timpara). Each maintainer has final say on their respective repo.
 
 ### Decision principles
 
