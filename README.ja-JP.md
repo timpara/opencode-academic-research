@@ -1,21 +1,26 @@
-# Claude Code 向け Academic Research Skills
+# OpenCode 向け Academic Research Skills
 
-[![Version](https://img.shields.io/badge/version-v3.9.4.2-blue)](https://github.com/Imbad0202/academic-research-skills/releases/tag/v3.9.4.2)
+[![Version](https://img.shields.io/badge/version-v3.9.4.2--opencode.1-blue)](https://github.com/timpara/opencode-academic-research/releases)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey)](https://creativecommons.org/licenses/by-nc/4.0/)
-[![Sponsor](https://img.shields.io/badge/sponsor-Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/crucify020v)
+[![Upstream](https://img.shields.io/badge/upstream-academic--research--skills-orange)](https://github.com/timpara/academic-research-skills)
 
 [English](README.md) | [简体中文版](README.zh-CN.md) | [繁體中文版](README.zh-TW.md)
 
-学術研究のための Claude Code スキル統合スイート。研究から論文公開までの全工程をカバーします。
+学術研究のための [OpenCode](https://opencode.ai) スキル統合スイート。研究から論文公開までの全工程をカバーします。
 
-**30秒でインストール**（Claude Code CLI / VS Code / JetBrains、v3.7.0+）:
+このリポジトリは [`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills) の OpenCode 移植版です。`timpara/academic-research-skills` 自体は **吴政宜 (Cheng-I Wu)**（[Imbad0202/academic-research-skills](https://github.com/Imbad0202/academic-research-skills)）による Claude Code プラグイン原版の fork です。ワークフローの内容、エージェントのプロンプト、Python 検証スクリプトはすべて上流から来ています。移植版が変えたのは Claude Code のプラグインパッケージングを OpenCode のファイルベースの skill / command / plugin 自動検出機構に置き換えた点だけです。
 
-```text
-/plugin marketplace add Imbad0202/academic-research-skills
-/plugin install academic-research-skills
+**1分でインストール**（OpenCode 0.x 以降）:
+
+```bash
+git clone https://github.com/timpara/opencode-academic-research.git
+cd opencode-academic-research
+./install.sh   # skills/、commands/、plugins/ を ~/.config/opencode/ に symlink
+bun install    # @opencode-ai/plugin をインストール（session-loaded plugin が使用）
+uv sync --extra dev  # Python 検証スクリプトの依存関係をインストール
 ```
 
-その後、`/ars-plan` を試してソクラテス式対話で論文構成を整理するか、前提条件と従来のシンボリックリンク方式については [Quick install](#quick-install) を参照してください。
+インストール後、OpenCode を開いて `/ars-plan` を実行すると、ARS がソクラテス式対話で章構成を整理します。詳しい手順は [Quick install](#quick-install) を参照してください。
 
 > **AI はあなたの副操縦士であり、操縦士ではありません。** このツールはあなたの代わりに論文を書きません。参考文献の探索、引用のフォーマット、データ検証、論理的整合性チェックといった泥臭い作業を引き受けることで、本当に頭を使う必要のある部分 — 問いの定義、手法の選択、データの意味の解釈、「私はこう主張する」に続く文を書くこと — にあなたが集中できるようにします。
 >
@@ -45,26 +50,40 @@ v3.3 は [**PaperOrchestra**](https://arxiv.org/abs/2604.05018)（Song, Song, Pf
 
 **前提条件**
 
-- [Claude Code](https://claude.ai/install.sh)（最新版。プラグインパッケージングは最近のバージョンが必要）
-- `ANTHROPIC_API_KEY` をエクスポート、または初回 `claude` 実行時に設定
+- [OpenCode](https://opencode.ai) がインストール・ログイン済み（`opencode auth login`）
+- [`bun`](https://bun.sh) — TypeScript plugin に必要
+- [`uv`](https://docs.astral.sh/uv/) — Python 検証スクリプトに必要
+- 選択したモデルプロバイダの API key（Anthropic、OpenAI、GitHub Copilot のいずれか）
 - *オプション:* DOCX 用の Pandoc、APA 7.0 PDF 用の tectonic + Source Han Serif TC（Markdown 出力はどちらがなくても動作）
 
-**プラグインインストール（v3.7.0+、推奨）:**
+**インストール手順**
 
-```text
-/plugin marketplace add Imbad0202/academic-research-skills
-/plugin install academic-research-skills
+```bash
+# 1. Clone
+git clone https://github.com/timpara/opencode-academic-research.git
+cd opencode-academic-research
+
+# 2. OpenCode config に symlink
+./install.sh
+
+# 3. plugin runtime をインストール
+bun install
+
+# 4. Python 検証の依存関係をインストール
+uv sync --extra dev
 ```
 
-**動作確認:** `/ars-plan` を実行して取り組んでいる論文について説明してください — ARS がソクラテス式対話を開始し、章構成をマップします。代わりに単発テストを行うには、`/ars-lit-review "your topic"` を試してください。
+`install.sh` は `~/.config/opencode/{skills,commands,plugins}/` をこのリポジトリへ symlink するため、ここでファイルを編集すると次の OpenCode セッションに反映されます。
 
-**👉 [docs/SETUP.md](docs/SETUP.md)** — 完全ガイド: Claude Code インストール、API キー設定、DOCX/PDF 用のオプション Pandoc/tectonic、クロスモデル検証（`ARS_CROSS_MODEL`）、5 つのインストール方法（Plugin、プロジェクトスキル、グローバルスキル、claude.ai Project、リポジトリクローン）。
+**動作確認:** OpenCode を開いて `/ars-plan` を実行し、取り組んでいる論文について説明してください。ARS がソクラテス式対話を開始し、章構成をマップします。代わりに単発テストを行うには、`/ars-lit-review "your topic"` を試してください。
 
-**Codex CLI を使用していますか?** 代わりに姉妹ディストリビューションをインストールしてください: [`Imbad0202/academic-research-skills-codex`](https://github.com/Imbad0202/academic-research-skills-codex) — 同じワークフローコンテンツ、`ars-*` エイリアスを持つ単一の `$academic-research-suite` スキルとしての Codex ネイティブパッケージング。
+**👉 [docs/SETUP.md](docs/SETUP.md)** — 完全ガイド: OpenCode インストール、プロバイダ key 設定、DOCX/PDF 用のオプション Pandoc/tectonic、クロスモデル検証（`ARS_CROSS_MODEL`）、3 つのインストール方法。
+
+**オリジナルの Claude Code プラグインを使いたい場合は?** 上流は [`Imbad0202/academic-research-skills`](https://github.com/Imbad0202/academic-research-skills) およびメンテナンス fork [`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills) で引き続きサポートされています。ワークフローの内容は同じで、違いは packaging のみです。
 
 ## パフォーマンス＆コスト
 
-**👉 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)** — モードごとのトークン予算、フルパイプライン見積り（15k 語の論文で約 $4-6）、推奨 Claude Code 設定（Skip Permissions; Agent Team オプション）。
+**👉 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)** — モードごとのトークン予算、フルパイプライン見積り（15k 語の論文で約 $4-6）、推奨 OpenCode 設定。
 
 ## ガイド＆記事
 
@@ -307,15 +326,17 @@ https://github.com/Imbad0202/academic-research-skills
 
 ## 貢献者
 
-**Cheng-I Wu**（吳政宜）— 著者およびメンテナー
+**Cheng-I Wu**（吳政宜）— 原作者、上流 [`Imbad0202/academic-research-skills`](https://github.com/Imbad0202/academic-research-skills) のメンテナー。ワークフローの内容、エージェントのプロンプト、検証スクリプトはすべて彼によるものです。
 
-**[aspi6246](https://github.com/aspi6246)** — 貢献者。v3.1 最適化は [Claude-Code-Skills-for-Academics](https://github.com/aspi6246/Claude-Code-Skills-for-Academics) のパターンに触発されました: read-only 制約パターン、ファーストクラス設計としてのアンチパターン体系化、認知フレームワークアプローチ（手順だけでなく「考え方」を教える）、リーンなスキルサイズ哲学。
+**[timpara](https://github.com/timpara)** — Fork メンテナー（[`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills)）と、この OpenCode 移植版のメンテナー。
 
-**[mchesbro1](https://github.com/mchesbro1)** — 貢献者。`academic-paper-reviewer/references/top_journals_by_field.md` 用の IS Basket of 8 ジャーナルを最初に提案・起草（[Issue #5](https://github.com/Imbad0202/academic-research-skills/issues/5)）。
+**[aspi6246](https://github.com/aspi6246)** — 上流貢献者。v3.1 最適化は [Claude-Code-Skills-for-Academics](https://github.com/aspi6246/Claude-Code-Skills-for-Academics) のパターンに触発されました: read-only 制約パターン、ファーストクラス設計としてのアンチパターン体系化、認知フレームワークアプローチ、リーンなスキルサイズ哲学。
 
-**[cloudenochcsis](https://github.com/cloudenochcsis)** — 貢献者。IS セクションを *Basket of 8* から完全な *Senior Scholars' Basket of 11* に拡張 — *Decision Support Systems*、*Information & Management*、*Information and Organization* を追加（[Issue #7](https://github.com/Imbad0202/academic-research-skills/issues/7)、[PR #8](https://github.com/Imbad0202/academic-research-skills/pull/8)）。出典: [AIS Senior Scholars' List of Premier Journals](https://aisnet.org/page/SeniorScholarListofPremierJournals)。
+**[mchesbro1](https://github.com/mchesbro1)** — 上流貢献者。IS Basket of 8 ジャーナルを最初に提案・起草。
 
-**[eltociear](https://github.com/eltociear)**（Ikko Eltociear Ashimine）— 貢献者。日本語版 README（[`README.ja-JP.md`](README.ja-JP.md)）を翻訳（[PR #161](https://github.com/Imbad0202/academic-research-skills/pull/161)）。
+**[cloudenochcsis](https://github.com/cloudenochcsis)** — 上流貢献者。IS セクションを *Basket of 8* から完全な *Senior Scholars' Basket of 11* に拡張。
+
+**[eltociear](https://github.com/eltociear)**（Ikko Eltociear Ashimine）— 上流貢献者。日本語版 README を翻訳。
 
 ---
 

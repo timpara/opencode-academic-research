@@ -1,21 +1,26 @@
-# Academic Research Skills for Claude Code
+# Academic Research Skills for OpenCode
 
-[![Version](https://img.shields.io/badge/version-v3.9.4.2-blue)](https://github.com/Imbad0202/academic-research-skills/releases/tag/v3.9.4.2)
+[![Version](https://img.shields.io/badge/version-v3.9.4.2--opencode.1-blue)](https://github.com/timpara/opencode-academic-research/releases)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey)](https://creativecommons.org/licenses/by-nc/4.0/)
-[![Sponsor](https://img.shields.io/badge/sponsor-Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/crucify020v)
+[![Upstream](https://img.shields.io/badge/upstream-academic--research--skills-orange)](https://github.com/timpara/academic-research-skills)
 
 [English](README.md) | [繁體中文版](README.zh-TW.md) | [日本語版](README.ja-JP.md)
 
-一套完整的学术研究 Claude Code 技能包，涵盖从研究到论文出版的全流程。
+一套完整的学术研究 [OpenCode](https://opencode.ai) 技能包，涵盖从研究到论文出版的全流程。
 
-**30 秒安装**（Claude Code CLI / VS Code / JetBrains，v3.7.0+）：
+本 repo 是 [`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills) 的 OpenCode 移植版，而 `timpara/academic-research-skills` 又是 **吴政宜 (Cheng-I Wu)**（[Imbad0202/academic-research-skills](https://github.com/Imbad0202/academic-research-skills)）原版 Claude Code plugin 的 fork。所有的 workflow 内容、agent prompts、Python 验证脚本都来自上游；移植版只把 Claude Code 的 plugin packaging 换成 OpenCode 的文件式 skill / command / plugin 自动发现机制。
 
-```text
-/plugin marketplace add Imbad0202/academic-research-skills
-/plugin install academic-research-skills
+**一分钟内安装**（OpenCode 0.x 以上）：
+
+```bash
+git clone https://github.com/timpara/opencode-academic-research.git
+cd opencode-academic-research
+./install.sh   # 把 skills/、commands/、plugins/ symlink 进 ~/.config/opencode/
+bun install    # 安装 @opencode-ai/plugin（给 session-loaded plugin 用）
+uv sync --extra dev  # 安装 Python 验证脚本的 deps
 ```
 
-安装后运行 `/ars-plan`，ARS 会用苏格拉底式对话帮你规划章节结构。需要前置条件或传统 symlink 安装，请看 [快速安装](#快速安装)。
+安装后打开 OpenCode 运行 `/ars-plan`，ARS 会用苏格拉底式对话帮你规划章节结构。需要逐步说明请看 [快速安装](#快速安装)。
 
 > **AI 是你的副驾驶，不是机长。** 这个工具不会替你写论文。它处理繁琐工作：搜文献、排格式、验数据、查逻辑一致性。这样你就能专注在真正需要思考的事上：定义问题、选择方法、解读数据意义、写出「我认为」后面那句话。
 >
@@ -45,26 +50,40 @@ v3.3 的灵感来自 [**PaperOrchestra**](https://arxiv.org/abs/2604.05018)（So
 
 **前置条件**
 
-- [Claude Code](https://claude.ai/install.sh)（建议最新版；plugin packaging 需要近期版本）
-- 已导出 `ANTHROPIC_API_KEY`，或在第一次运行 `claude` 时设置
+- [OpenCode](https://opencode.ai) 已安装并登录（`opencode auth login`）
+- [`bun`](https://bun.sh) — TypeScript plugin 需要
+- [`uv`](https://docs.astral.sh/uv/) — Python 验证脚本需要
+- 你选择的模型供应商的 API key（Anthropic、OpenAI、GitHub Copilot 都行）
 - *选用：* Pandoc 用于 DOCX 输出，tectonic + 思源宋体 TC 用于 APA 7.0 PDF（纯 Markdown 输出不需要这两者）
 
-**Plugin 安装（v3.7.0+，推荐）：**
+**安装步骤**
 
-```text
-/plugin marketplace add Imbad0202/academic-research-skills
-/plugin install academic-research-skills
+```bash
+# 1. Clone
+git clone https://github.com/timpara/opencode-academic-research.git
+cd opencode-academic-research
+
+# 2. Symlink 进 OpenCode config
+./install.sh
+
+# 3. 安装 plugin runtime
+bun install
+
+# 4. 安装 Python 验证 deps
+uv sync --extra dev
 ```
 
-**验证可用：** 运行 `/ars-plan` 并描述你正在写的论文，ARS 会用苏格拉底式对话帮你规划章节结构。如果想做单次测试，可以运行 `/ars-lit-review "你的主题"`。
+`install.sh` 把 `~/.config/opencode/{skills,commands,plugins}/` symlink 到本 repo，所以你在这里改文件，下一个 OpenCode session 就会看到变化。
 
-**👉 [docs/SETUP.zh-TW.md](docs/SETUP.zh-TW.md)** — 完整指南：安装 Claude Code、设置 API key、选用的 Pandoc/tectonic（DOCX/PDF）、跨模型验证（`ARS_CROSS_MODEL`），以及五种安装方式（Plugin、项目 skills、全局 skills、claude.ai Project、repo clone）。
+**验证可用：** 打开 OpenCode 运行 `/ars-plan` 并描述你正在写的论文，ARS 会用苏格拉底式对话帮你规划章节结构。如果想做单次测试，可以运行 `/ars-lit-review "你的主题"`。
 
-**用 Codex CLI？** 请安装姐妹版：[`Imbad0202/academic-research-skills-codex`](https://github.com/Imbad0202/academic-research-skills-codex)。同一套 workflow 内容，Codex 原生打包为单一 `$academic-research-suite` skill，提供 `ars-*` 别名。
+**👉 [docs/SETUP.md](docs/SETUP.md)** — 完整指南：安装 OpenCode、设置供应商 key、选用的 Pandoc/tectonic（DOCX/PDF）、跨模型验证（`ARS_CROSS_MODEL`），以及三种安装方式。
+
+**用原版 Claude Code plugin？** 上游持续支持于 [`Imbad0202/academic-research-skills`](https://github.com/Imbad0202/academic-research-skills)（以及维护 fork [`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills)）。Workflow 内容相同，差异只在 packaging。
 
 ## 性能与费用
 
-**👉 [docs/PERFORMANCE.zh-TW.md](docs/PERFORMANCE.zh-TW.md)** — 各模式 token 预算、完整 pipeline 估算（一篇 15k 字论文约 ~$4–6），以及建议的 Claude Code 设置（Skip Permissions；Agent Team 选用）。
+**👉 [docs/PERFORMANCE.zh-TW.md](docs/PERFORMANCE.zh-TW.md)** — 各模式 token 预算、完整 pipeline 估算（一篇 15k 字论文约 ~$4–6），以及建议的 OpenCode 设置。
 
 ## 使用指南与文章
 
@@ -288,17 +307,19 @@ https://github.com/Imbad0202/academic-research-skills
 
 ## 贡献者
 
-**吴政宜** (Cheng-I Wu) — 作者与维护者
+**吴政宜** (Cheng-I Wu) — 原作者与上游 [`Imbad0202/academic-research-skills`](https://github.com/Imbad0202/academic-research-skills) 维护者。所有 workflow 内容、agent prompts、验证脚本都是他的。
 
-**[aspi6246](https://github.com/aspi6246)** — 贡献者。v3.1 优化灵感来自 [Claude-Code-Skills-for-Academics](https://github.com/aspi6246/Claude-Code-Skills-for-Academics)：只读约束模式、Anti-Pattern 作为一等公民设计、认知框架方法（教「如何思考」而非只有步骤）、精简 skill 体量理念。
+**[timpara](https://github.com/timpara)** — Fork 维护者（[`timpara/academic-research-skills`](https://github.com/timpara/academic-research-skills)）与本 OpenCode 移植版维护者。
 
-**[mchesbro1](https://github.com/mchesbro1)** — 贡献者。最初提出并撰写了 IS Basket of 8 期刊清单（[Issue #5](https://github.com/Imbad0202/academic-research-skills/issues/5)）。
+**[aspi6246](https://github.com/aspi6246)** — 上游贡献者。v3.1 优化灵感来自 [Claude-Code-Skills-for-Academics](https://github.com/aspi6246/Claude-Code-Skills-for-Academics)：只读约束模式、Anti-Pattern 作为一等公民设计、认知框架方法、精简 skill 体量理念。
 
-**[cloudenochcsis](https://github.com/cloudenochcsis)** — 贡献者。将 IS 章节从 *Basket of 8* 扩充为完整的 *Senior Scholars' Basket of 11*，补上 *Decision Support Systems*、*Information & Management*、*Information and Organization*（[Issue #7](https://github.com/Imbad0202/academic-research-skills/issues/7)、[PR #8](https://github.com/Imbad0202/academic-research-skills/pull/8)）。数据源：[AIS Senior Scholars' List of Premier Journals](https://aisnet.org/page/SeniorScholarListofPremierJournals)。
+**[mchesbro1](https://github.com/mchesbro1)** — 上游贡献者。最初提出并撰写了 IS Basket of 8 期刊清单。
 
-**[eltociear](https://github.com/eltociear)**（Ikko Eltociear Ashimine）— 贡献者。翻译了日文版 README（[`README.ja-JP.md`](README.ja-JP.md)）（[PR #161](https://github.com/Imbad0202/academic-research-skills/pull/161)）。
+**[cloudenochcsis](https://github.com/cloudenochcsis)** — 上游贡献者。将 IS 章节从 *Basket of 8* 扩充为完整的 *Senior Scholars' Basket of 11*。
 
-**[xpfo-go](https://github.com/xpfo-go)**（xpfo）— 贡献者。翻译了简体中文版 README（[`README.zh-CN.md`](README.zh-CN.md)）（[PR #181](https://github.com/Imbad0202/academic-research-skills/pull/181)）。
+**[eltociear](https://github.com/eltociear)**（Ikko Eltociear Ashimine）— 上游贡献者。翻译了日文版 README。
+
+**[xpfo-go](https://github.com/xpfo-go)**（xpfo）— 上游贡献者。翻译了简体中文版 README。
 
 ---
 
