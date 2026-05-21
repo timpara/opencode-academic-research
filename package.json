@@ -4,7 +4,12 @@
   "description": "OpenCode port of the Academic Research Skills suite. 4 skills, 13 slash commands, 38-agent pipeline for research, writing, peer review, and revision.",
   "license": "CC-BY-NC-4.0",
   "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
-    "@opencode-ai/plugin": "latest"
+    "@opencode-ai/plugin": "latest",
+    "@types/node": "^25.9.1",
+    "typescript": "^5.6.3"
   }
 }

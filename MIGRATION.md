@@ -176,6 +176,10 @@ git push origin main --tags
 - **`scripts/check_v3_6_7_pattern_protection.py`** — hard-pins agent file paths. If upstream moves agent files, the lint will break in CI.
 - **`requirements-dev.txt`** — if upstream re-adds it (the port deleted it), keep the port's `pyproject.toml` as the source of truth and ignore upstream's file.
 
+### Known pre-existing lint debt in `scripts/`
+
+`uv run ruff check scripts/` reports ~238 issues on the v3.9.4.2 import (mostly import-sort and unused-import). These come from the upstream Python suite and are **not** introduced by the port. The port keeps the scripts byte-identical to upstream so future merges stay clean. Do not run `ruff --fix` against `scripts/` unless you are willing to maintain the diff against upstream forever; instead, send the fix upstream and pull it back on the next sync.
+
 ---
 
 ## 5. Open questions for upstream

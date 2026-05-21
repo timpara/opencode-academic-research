@@ -145,6 +145,29 @@ Run all scripts with `uv run` so they pick up the project venv. Bare `python scr
 
 `format-convert` to DOCX needs `pandoc` on PATH. `format-convert` to PDF needs `tectonic` plus, for Traditional Chinese, the `Source Han Serif TC` font installed system-wide. If either is missing, fall back to Markdown output.
 
+### `uv sync` fails with `invalid peer certificate: UnknownIssuer`
+
+Some Linux installs ship a `uv` build that does not see the system CA bundle by default. Two workarounds:
+
+```bash
+# Option A: tell uv to use the system TLS stack
+uv sync --extra dev --native-tls
+
+# Option B: point uv at the system cert bundle explicitly
+SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt uv sync --extra dev --native-tls
+```
+
+If both fail, your distro's CA bundle path is different — check `/etc/pki/tls/certs/ca-bundle.crt` (RHEL/Fedora) or your distro's docs.
+
+### `bun` is not installed
+
+If `bun` is not available and you cannot install it via the official script (e.g. `unzip` is missing and you have no sudo), install it via `npm` instead:
+
+```bash
+npm install -g bun
+bun --version  # should print 1.x
+```
+
 ### Upstream-only docs reference `/plugin marketplace add`
 
 That command is Claude Code only. In OpenCode use `git clone` + `./install.sh` instead. If you find a stale reference in the docs, please open an issue or PR — the port maintainer wants to scrub all such references.
