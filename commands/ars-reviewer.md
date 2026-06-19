@@ -1,6 +1,6 @@
 ---
 description: ARS academic-paper-reviewer `full` mode — simulated peer-review panel
-agent: build
+agent: ars-reviewer
 compatibility: opencode
 ---
 

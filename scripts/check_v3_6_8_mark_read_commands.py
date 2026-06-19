@@ -25,8 +25,10 @@ REQUIRED_TOKENS = (
     "human_read_log",     # peer-file write target
 )
 
-# Routing metadata — accept either OpenCode or upstream format
-ROUTING_TOKENS_OPENCODE = ("agent: build", "compatibility: opencode")
+# Routing metadata — accept either OpenCode or upstream format.
+# OpenCode port uses any valid agent (build, ars-verifier, etc.) + compatibility: opencode.
+ROUTING_TOKEN_OPENCODE_COMPAT = "compatibility: opencode"
+ROUTING_TOKEN_OPENCODE_AGENT = "agent: "  # any agent name
 ROUTING_TOKEN_UPSTREAM = "model: sonnet"
 
 # Enforce canonical CLI dispatch pattern (PR #197 local convention):
@@ -61,12 +63,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
         # 2. Check for routing metadata (accept OpenCode or upstream format)
-        has_opencode_routing = all(t in body for t in ROUTING_TOKENS_OPENCODE)
+        has_opencode_routing = (
+            ROUTING_TOKEN_OPENCODE_COMPAT in body
+            and ROUTING_TOKEN_OPENCODE_AGENT in body
+        )
         has_upstream_routing = ROUTING_TOKEN_UPSTREAM in body
         if not has_opencode_routing and not has_upstream_routing:
             errors.append(
                 f"commands/{cmd_name}: missing routing metadata — "
-                f"need either 'agent: build' + 'compatibility: opencode' (OpenCode) "
+                f"need either 'agent: <name>' + 'compatibility: opencode' (OpenCode) "
                 f"or 'model: sonnet' (upstream)"
             )
         

@@ -1,0 +1,1 @@
+../../commands/ars-cache-invalidate.md

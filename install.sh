@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
 # install.sh — symlink ARS skills, commands, and plugins into the user's
-# OpenCode config so OpenCode auto-discovers them.
+# OpenCode config so OpenCode auto-discovers them from ANY project.
 #
-# OpenCode looks in $XDG_CONFIG_HOME/opencode/{skills,commands,plugins}/.
-# Symlinks let you edit files in this repo and see the changes in the next
-# OpenCode session, without copying anything.
+# OpenCode discovers from two locations:
+#   1. Project-local: .opencode/{skills,commands,plugins}/ (works when
+#      you run OpenCode inside THIS repo — already configured via symlinks
+#      in .opencode/ checked into git)
+#   2. Global: $XDG_CONFIG_HOME/opencode/{skills,commands,plugins}/
+#      (works from ANY directory — this is what install.sh sets up)
 #
 # Usage:
 #   ./install.sh           # symlink into ~/.config/opencode/
@@ -144,6 +147,10 @@ main_install() {
     echo "  1. bun install                # in this repo, so the plugin runs"
     echo "  2. uv sync --extra dev        # in this repo, so the Python scripts run"
     echo "  3. open OpenCode and try: /ars-plan"
+    echo
+    echo "Note: When working INSIDE this repo, OpenCode auto-discovers from"
+    echo ".opencode/ without needing this install. The global install makes"
+    echo "ARS available from any working directory."
 }
 
 main_uninstall() {

@@ -1,0 +1,1 @@
+../../commands/ars-full.md

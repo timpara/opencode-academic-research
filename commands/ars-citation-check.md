@@ -1,6 +1,7 @@
 ---
 description: ARS academic-paper `citation-check` mode — citation error report
-agent: build
+agent: ars-verifier
+subtask: true
 compatibility: opencode
 ---
 

@@ -1,6 +1,7 @@
 ---
 description: ARS deep-research `three-way-scan` mode — WHY / HOW / WHAT paper comparison
-agent: build
+agent: ars-researcher
+subtask: true
 compatibility: opencode
 ---
 

@@ -4,22 +4,38 @@ These rules tell OpenCode how to behave when working inside this repo.
 
 ## What this repo is
 
-This is the OpenCode port of [academic-research-skills](https://github.com/timpara/academic-research-skills), itself a fork of the upstream Claude Code plugin by Cheng-I Wu (Imbad0202). It provides four skills and thirteen slash commands for academic research, paper writing, peer review, and revision.
+This is the OpenCode port of [academic-research-skills](https://github.com/timpara/academic-research-skills), itself a fork of the upstream Claude Code plugin by Cheng-I Wu (Imbad0202). It provides four skills, sixteen slash commands, and four custom subagents for academic research, paper writing, peer review, and revision.
 
 The repo ships:
 
 - `skills/` — four self-contained skill bundles auto-discovered by OpenCode
-- `commands/` — thirteen `/ars-*` slash commands
-- `plugins/` — one TypeScript plugin that announces the suite on session start
-- `scripts/` — the upstream Python verification suite (124 files, ~47k lines) for citation integrity, claim-faithfulness audits, and temporal verification
+- `commands/` — sixteen `/ars-*` slash commands
+- `plugins/` — one TypeScript plugin (session announce, write-scope guard, compaction hook, shell env injection)
+- `.opencode/agents/` — four custom subagents (`ars-researcher`, `ars-writer`, `ars-reviewer`, `ars-verifier`)
+- `scripts/` — the upstream Python verification suite (~47k lines) for citation integrity, claim-faithfulness audits, and temporal verification
 - `agents/`, `shared/` — agent definitions and reference material the skills load on demand
+
+## Subagent routing
+
+Commands route to specialized subagents to keep context focused:
+
+| Agent | Role | Commands routed here |
+|---|---|---|
+| `ars-researcher` | Literature search, synthesis, systematic review | `/ars-lit-review`, `/ars-3w` (subtask) |
+| `ars-writer` | Paper drafting, revision, format conversion | `/ars-disclosure` (subtask), `/ars-format-convert` (subtask) |
+| `ars-reviewer` | Peer review simulation | `/ars-reviewer` |
+| `ars-verifier` | Citation checks, cache ops, mark-read signals | `/ars-citation-check`, `/ars-cache-invalidate`, `/ars-mark-read`, `/ars-unmark-read` (all subtask) |
+| `build` (default) | Full pipeline, planning, revision coaching | `/ars-full`, `/ars-plan`, `/ars-revision`, `/ars-revision-coach`, `/ars-abstract`, `/ars-outline`, `/ars-rebuttal-audit` |
+
+Commands marked "subtask" run in a child session and return results without polluting the primary context.
 
 ## Working in this repo
 
 - **Python**: use `uv` for everything. `uv run pytest scripts/` for tests, `uv run ruff check scripts/` for lint.
-- **Skill edits**: every change to a `skills/*/SKILL.md` file must preserve the YAML frontmatter shape and the `## Trigger Conditions` section — they drive auto-discovery.
-- **Command edits**: every file in `commands/` must keep frontmatter `agent: build` (or `agent: general` if it does no file writes) and a one-line `description`.
-- **Plugin edits**: `plugins/*.ts` files import from `@opencode-ai/plugin`. Run `bun install` after pulling.
+- **Skill edits**: every change to a `skills/*/SKILL.md` file must preserve the YAML frontmatter (`name`, `description`, `metadata.version`) — they drive auto-discovery.
+- **Command edits**: every file in `commands/` must keep `description` and `compatibility: opencode` in frontmatter. Route to the appropriate `agent` (`build`, `ars-researcher`, `ars-writer`, `ars-reviewer`, or `ars-verifier`). Add `subtask: true` for lightweight commands.
+- **Plugin edits**: `plugins/*.ts` files import from `@opencode-ai/plugin`. Run `bun install` in `.opencode/` or the repo root after pulling.
+- **Subagent edits**: `.opencode/agents/*.md` files define subagent behavior. Keep `mode: subagent` and appropriate permissions.
 - **Docs edits**: when you change anything users read (README, SETUP, QUICKSTART), the change must work with OpenCode invocation paths. Do not reintroduce Claude Code `/plugin marketplace add` examples.
 
 ## Routing discipline

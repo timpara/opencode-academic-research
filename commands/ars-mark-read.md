@@ -1,6 +1,7 @@
 ---
 description: ARS /ars-mark-read — record human-read signal for one or more citation keys
-agent: build
+agent: ars-verifier
+subtask: true
 compatibility: opencode
 ---
 

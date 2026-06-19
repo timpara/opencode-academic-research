@@ -1,6 +1,7 @@
 ---
 description: ARS /ars-cache-invalidate — drop cached verification entries for a citation key
-agent: build
+agent: ars-verifier
+subtask: true
 compatibility: opencode
 ---
 
