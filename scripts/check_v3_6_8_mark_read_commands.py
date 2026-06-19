@@ -4,7 +4,8 @@ Per v3.6.8 spec §3.6 + Step 7 (round-2 R2-002 amend) acceptance criteria:
 the 2 commands must exist, carry the validation rule (citation_key against
 `literature_corpus[]`), reference the peer-file write target
 (`<passport-stem>_human_read_log.yaml`) NOT entry frontmatter, and declare
-`model: sonnet` routing (per feedback_no_haiku.md discipline).
+routing metadata (OpenCode: `agent: build` + `compatibility: opencode`;
+upstream: `model: sonnet`).
 
 Run from repo root:
     python3 scripts/check_v3_6_8_mark_read_commands.py
@@ -22,8 +23,11 @@ REQUIRED_COMMANDS = ("ars-mark-read.md", "ars-unmark-read.md")
 REQUIRED_TOKENS = (
     "literature_corpus",  # validation rule reference
     "human_read_log",     # peer-file write target
-    "model: sonnet",      # routing per feedback_no_haiku.md
 )
+
+# Routing metadata — accept either OpenCode or upstream format
+ROUTING_TOKENS_OPENCODE = ("agent: build", "compatibility: opencode")
+ROUTING_TOKEN_UPSTREAM = "model: sonnet"
 
 # Enforce canonical CLI dispatch pattern (PR #197 local convention):
 # Prose instructions are fragile; using a literal bash block with $ARGUMENTS
@@ -55,8 +59,18 @@ def main(argv: list[str] | None = None) -> int:
                     f"commands/{cmd_name}: missing required token "
                     f"{token!r} (spec §3.6 Step 7 contract)"
                 )
+
+        # 2. Check for routing metadata (accept OpenCode or upstream format)
+        has_opencode_routing = all(t in body for t in ROUTING_TOKENS_OPENCODE)
+        has_upstream_routing = ROUTING_TOKEN_UPSTREAM in body
+        if not has_opencode_routing and not has_upstream_routing:
+            errors.append(
+                f"commands/{cmd_name}: missing routing metadata — "
+                f"need either 'agent: build' + 'compatibility: opencode' (OpenCode) "
+                f"or 'model: sonnet' (upstream)"
+            )
         
-        # 2. Check for canonical implementation block (Moved outside token loop)
+        # 3. Check for canonical implementation block
         if REQUIRED_BLOCK not in body:
             errors.append(
                 f"commands/{cmd_name}: missing compliant 'Implementation: ```bash' block "

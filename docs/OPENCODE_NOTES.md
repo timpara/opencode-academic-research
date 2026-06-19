@@ -65,7 +65,9 @@ Plugins are TypeScript files under `plugins/` exporting a `Plugin` from `@openco
 - `chat.params` — fires before sending the prompt to the model.
 - `tool.execute.before` / `tool.execute.after` — fire around tool calls.
 
-The port's `plugins/ars-session-loaded.ts` uses `session.created` for parity with the upstream Claude Code `SessionStart` hook.
+The port's `plugins/ars-session-loaded.ts` uses:
+- `session.created` — startup announce (parity with the upstream Claude Code `SessionStart` hook).
+- `tool.execute.before` — write-scope guard (port of the upstream `hooks/run_guard.sh` + `scripts/ars_write_scope_guard.py` PreToolUse hook).
 
 ### Runtime requirements
 
@@ -86,14 +88,23 @@ OpenCode does **not** need this. The model sees commands and skills via OpenCode
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
   "permission": {
     "bash": {
       "uv *": "allow",
-      "uvx *": "allow",
+      "uv run *": "allow",
       "pytest *": "allow",
       "ruff *": "allow",
-      "python scripts/*": "allow"
-    }
+      "python scripts/*": "allow",
+      "git status": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "ls *": "allow",
+      "cat *": "allow",
+      "*": "ask"
+    },
+    "edit": "allow",
+    "write": "allow"
   }
 }
 ```
@@ -126,25 +137,53 @@ The upstream skills reference files using relative paths from `SKILL.md`. The po
 
 ---
 
-## 6. Known limitations
+## 6. Write-scope guard
 
-### 6.1 No cross-agent dispatch like Claude Code's plugin agents
+The upstream v3.10 release introduced a PreToolUse hook (`hooks/run_guard.sh` + `scripts/ars_write_scope_guard.py`) that enforces per-agent write boundaries. In Claude Code, this is wired via `hooks/hooks.json`. In the OpenCode port, the guard is implemented natively in the TypeScript plugin using `tool.execute.before`.
+
+### How it works
+
+The guard reads `scripts/ars_phase_scope_manifest.json`, which maps each of the 23 Bucket A agents to their allowed write globs (e.g., `phase1_*/**`, `phase7_*/**`). When a write tool (Write, Edit, MultiEdit) targets a file inside a `phase*_*/` directory, the guard checks whether that path matches any agent's allowed globs.
+
+### Modes
+
+- **Advisory** (default): Logs a warning when a write would violate scope boundaries. Does not block.
+- **Strict** (`ARS_WRITE_GUARD=strict`): Logs an error for scope violations.
+
+### Limitations vs upstream
+
+The upstream Claude Code hook receives the `agent_type` in the hook payload, enabling per-agent enforcement. OpenCode's `tool.execute.before` does not (yet) expose which subagent is active, so the port enforces a weaker invariant: "all writes into phase directories must match at least one agent's allowed globs." This catches the most common failure mode (writing into the wrong phase number) but cannot catch same-phase cross-agent violations.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `plugins/ars-session-loaded.ts` | Guard implementation (TypeScript, runs in OpenCode) |
+| `scripts/ars_phase_scope_manifest.json` | Agent-to-glob mapping (platform-agnostic data) |
+| `scripts/ars_write_scope_guard.py` | Upstream guard logic (Python, Claude Code only) |
+| `hooks/run_guard.sh` | Upstream launcher (shell, Claude Code only) |
+
+---
+
+## 7. Known limitations
+
+### 7.1 No cross-agent dispatch like Claude Code's plugin agents
 
 Upstream v3.7.0 introduced "plugin-shipped agents" (`agents/synthesis_agent.md`, `agents/research_architect_agent.md`, `agents/report_compiler_agent.md`) as symlinks into `deep-research/agents/`. These were special in Claude Code because the plugin manifest registered them as top-level agents.
 
 OpenCode does not (yet) have a comparable concept. The files still exist in this repo under `agents/`, and the skills' internal Task-tool dispatch still finds them via the existing relative paths. The user-facing `Task` tool sees them as ordinary agent files. There is no functional regression, just one less layer of indirection.
 
-### 6.2 Python script invocation
+### 7.2 Python script invocation
 
 Several commands (`/ars-mark-read`, `/ars-unmark-read`) shell out to Python scripts under `scripts/`. The commands assume `python` resolves to a Python with the deps installed. If you used `uv` (recommended), prefix with `uv run` or activate the venv. The `opencode.json` permission rules already allow `uv` and `python scripts/*` so OpenCode will not prompt.
 
-### 6.3 SessionStart timing
+### 7.3 SessionStart timing
 
 `session.created` fires after OpenCode initializes the session but before the first user message. If you add UI-facing output to the plugin, be aware some clients buffer log messages until after the first model response.
 
 ---
 
-## 7. Why not a single mega-skill?
+## 8. Why not a single mega-skill?
 
 We considered packaging the four skills as a single `academic-research-suite` skill (matching the Codex CLI sibling distribution shape). We kept four because:
 
@@ -154,7 +193,7 @@ We considered packaging the four skills as a single `academic-research-suite` sk
 
 ---
 
-## 8. References
+## 9. References
 
 - OpenCode docs: [`opencode.ai/docs`](https://opencode.ai/docs)
 - `@opencode-ai/plugin` package: [`opencode.ai/docs/plugins/`](https://opencode.ai/docs/plugins/)

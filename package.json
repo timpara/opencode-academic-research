@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "latest",
+    "@opencode-ai/plugin": "^1.15.6",
     "@types/node": "^25.9.1",
     "typescript": "^5.6.3"
   }

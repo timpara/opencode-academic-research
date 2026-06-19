@@ -20,9 +20,9 @@ on:
       - "scripts/check_silent_upgrade.py"
       - "shared/references/epistemic_status_vocabulary.md"
       # writer prompts governing prose register -> status_classification + summarization_adequacy
-      - "deep-research/agents/synthesis_agent.md"
-      - "academic-paper/agents/draft_writer_agent.md"
-      - "deep-research/agents/report_compiler_agent.md"
+      - "skills/deep-research/agents/synthesis_agent.md"
+      - "skills/academic-paper/agents/draft_writer_agent.md"
+      - "skills/deep-research/agents/report_compiler_agent.md"
       # rq_framing_patterns scoring runner -> the harness dispatches to it, so
       # changes there must re-run the eval harness (else RQ scoring can drift
       # without the gate noticing).
@@ -46,9 +46,9 @@ on:
       - "scripts/epistemic_status_extractor.py"
       - "scripts/check_silent_upgrade.py"
       - "shared/references/epistemic_status_vocabulary.md"
-      - "deep-research/agents/synthesis_agent.md"
-      - "academic-paper/agents/draft_writer_agent.md"
-      - "deep-research/agents/report_compiler_agent.md"
+      - "skills/deep-research/agents/synthesis_agent.md"
+      - "skills/academic-paper/agents/draft_writer_agent.md"
+      - "skills/deep-research/agents/report_compiler_agent.md"
       - "scripts/check_rq_framing_patterns.py"
       - "evals/gold/**"
       - "scripts/run_evals.py"
@@ -80,10 +80,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-dev.txt
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt pytest
+        run: pip install -e ".[dev]"
 
       - name: Run eval harness (Phase-2 tasks auto-skipped by discovery)
         id: run

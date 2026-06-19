@@ -26,10 +26,10 @@ jobs:
         with:
           python-version: "3.x"
           cache: pip
-          cache-dependency-path: requirements-dev.txt
+          cache-dependency-path: pyproject.toml
 
       - name: Install lint dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -e ".[dev]"
 
       - name: Run freshness check (non-blocking)
         env:

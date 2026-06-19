@@ -6,26 +6,22 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - 'shared/contracts/**'
-      - 'conftest.py'
       - 'pyproject.toml'
-      - 'requirements-dev.txt'
       - '.github/workflows/pytest.yml'
-      - 'academic-pipeline/references/adapters/**'
-      - 'academic-pipeline/references/literature_corpus_consumers.md'
-      - 'deep-research/agents/bibliography_agent.md'
+      - 'skills/academic-pipeline/references/adapters/**'
+      - 'skills/academic-pipeline/references/literature_corpus_consumers.md'
+      - 'skills/deep-research/agents/bibliography_agent.md'
   push:
     branches: [main]
     paths:
       - 'scripts/**'
       - 'tests/**'
       - 'shared/contracts/**'
-      - 'conftest.py'
       - 'pyproject.toml'
-      - 'requirements-dev.txt'
       - '.github/workflows/pytest.yml'
-      - 'academic-pipeline/references/adapters/**'
-      - 'academic-pipeline/references/literature_corpus_consumers.md'
-      - 'deep-research/agents/bibliography_agent.md'
+      - 'skills/academic-pipeline/references/adapters/**'
+      - 'skills/academic-pipeline/references/literature_corpus_consumers.md'
+      - 'skills/deep-research/agents/bibliography_agent.md'
 
 concurrency:
   # Suffix by event_name so push (branches: [main]) and pull_request
@@ -45,12 +41,12 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: requirements-dev.txt
+          cache-dependency-path: pyproject.toml
 
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt pytest
+          pip install -e ".[dev]"
 
       - name: Run test suite
         env:

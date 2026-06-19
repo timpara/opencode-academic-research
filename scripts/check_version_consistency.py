@@ -1,31 +1,26 @@
 #!/usr/bin/env python3
-"""Lint: version labels stay aligned across .claude/CLAUDE.md, SKILL.md frontmatter, and CHANGELOG.md.
+"""Lint: version labels stay aligned across version sources, SKILL.md frontmatter, and CHANGELOG.md.
 
 Invariants enforced:
-  1. Every skill listed in .claude/CLAUDE.md Skills Overview table has a version
-     equal to its own SKILL.md metadata.version.
-  2. .claude/CLAUDE.md "**Suite version**: X.Y.Z" equals the most recent
-     "## [X.Y.Z]" entry in CHANGELOG.md.
-  3. academic-pipeline version in the table equals the suite version (pipeline
-     = orchestrator, by convention tracks the suite release).
-  4. The plugin manifests (.claude-plugin/plugin.json "version" and
+  1. (Claude Code only) Every skill listed in .claude/CLAUDE.md Skills Overview
+     table has a version equal to its own SKILL.md metadata.version.
+  2. Suite version (from .claude/CLAUDE.md or package.json) equals the most
+     recent "## [X.Y.Z]" entry in CHANGELOG.md.
+  3. (Claude Code only) academic-pipeline version in the table equals the suite version.
+  4. (Claude Code only) The plugin manifests (.claude-plugin/plugin.json "version" and
      .claude-plugin/marketplace.json plugins[].version) equal the suite version.
-     These are the repo's OUTWARD-FACING package metadata — a user updating the
-     plugin sees them — and were the one surface a v3.10.0 release-doc pass missed
-     because no lint covered them (marketplace had silently sat at 3.7.0).
+     OpenCode port: package.json "version" is checked instead.
   5. The README.md shields.io version badge (`badge/version-vX.Y.Z`) equals the
      suite version — the most outward-facing surface of all.
   6. No docs/*.md cites a `vX.Y.Z` ABOVE the suite version (a forward/unknown
      reference misleads readers). Equal-to-suite is allowed.
   7. Every version-bearing H2 heading in docs/<name>.md has a matching
      version-bearing H2 (same version) in docs/<name>.zh-TW.md and vice versa.
-     Plain headings may differ — only version TAGS must stay in lockstep.
-  8. The plugin.json description's "N-agent" claim (when present) equals the
-     number of unique *_agent.md files in the tree (#414: the advertised
-     number had silently drifted from the tree). The plugin-root agents/
-     mirror dir is excluded from the count — real byte-identical copies of
-     deep-research agents since #413 (symlinks before that), pinned as pure
-     aliases by check_agents_mirror_sync.py, never a source of new agents.
+  8. (Claude Code only) The plugin.json description's "N-agent" claim (when
+     present) equals the number of unique *_agent.md files in the tree.
+
+OpenCode port adaptation: when opencode.json exists and .claude/CLAUDE.md does
+not, invariants 1/3/4/8 are replaced with OpenCode-compatible equivalents.
 
 Runs from repo root by default; `--path` lets tests point at a fake tree.
 """
@@ -158,9 +153,96 @@ def _parse_changelog_latest(
     return None, None
 
 
+def _is_opencode_port(root: Path) -> bool:
+    """Detect if this is the OpenCode port (opencode.json present, .claude/ absent)."""
+    return (root / "opencode.json").is_file() and not (root / ".claude" / "CLAUDE.md").is_file()
+
+
+def _parse_package_json_version(root: Path) -> tuple[str | None, str | None]:
+    """Extract version from package.json for the OpenCode port.
+    Returns (valid_version, error_message)."""
+    pkg = root / "package.json"
+    if not pkg.is_file():
+        return None, f"{pkg}: not found"
+    try:
+        data = json.loads(pkg.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, ValueError) as exc:
+        return None, f"{pkg}: invalid JSON ({exc})"
+    raw = data.get("version")
+    if raw is None:
+        return None, f"{pkg}: missing 'version' key"
+    # OpenCode port versions are like "3.13.0-opencode.1" — extract the
+    # leading N.N.N(.N) portion for comparison against CHANGELOG.
+    m = re.match(r"(\d+(?:\.\d+){2,3})", str(raw))
+    if m:
+        return m.group(1), None
+    return None, f"{pkg}: version {raw!r} does not start with a canonical N.N.N(.N)"
+
+
 def check(root: Path) -> list[str]:
     errors: list[str] = []
 
+    is_opencode = _is_opencode_port(root)
+
+    if is_opencode:
+        # OpenCode port: derive suite version from package.json
+        suite_version, pkg_err = _parse_package_json_version(root)
+        if pkg_err:
+            errors.append(pkg_err)
+
+        # Validate CHANGELOG latest matches
+        changelog = root / "CHANGELOG.md"
+        if not changelog.is_file():
+            errors.append(f"{changelog}: not found")
+        else:
+            latest, invalid_latest = _parse_changelog_latest(
+                changelog.read_text(encoding="utf-8")
+            )
+            if latest is None and invalid_latest is None:
+                errors.append(f"{changelog}: no '## [X.Y.Z]' entry found")
+            elif invalid_latest is not None:
+                errors.append(
+                    f"{changelog}: latest entry token {invalid_latest!r} is "
+                    "not a canonical N.N.N or N.N.N.N version"
+                )
+            elif suite_version is not None and latest != suite_version:
+                errors.append(
+                    f"package.json: version {suite_version!r} does not match "
+                    f"CHANGELOG latest entry {latest!r}"
+                )
+
+        # Validate each skill's frontmatter metadata.version exists
+        skills_dir = root / "skills"
+        if skills_dir.is_dir():
+            for skill_dir in sorted(skills_dir.iterdir()):
+                skill_md = skill_dir / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                try:
+                    fm = parse_frontmatter(skill_md)
+                except FrontmatterError as exc:
+                    errors.append(str(exc))
+                    continue
+                if fm is None:
+                    errors.append(f"{skill_md}: missing YAML frontmatter")
+                    continue
+                metadata = fm.get("metadata") or {}
+                declared = metadata.get("version")
+                if declared is None:
+                    errors.append(f"{skill_md}: metadata.version is missing")
+
+        if suite_version is not None:
+            # Invariant 5: README version badge
+            errors.extend(_check_readme_badge(root, suite_version))
+            # Invariant 6: docs/ must not cite a version above the suite version
+            errors.extend(_check_docs_versions(root, suite_version))
+
+        # Invariant 7: en<->zh-TW heading parity (always applies)
+        errors.extend(_check_zhtw_heading_parity(root))
+
+        return errors
+
+    # --- Claude Code mode (original behavior) ---
     claude_md = root / ".claude" / "CLAUDE.md"
     if not claude_md.is_file():
         errors.append(f"{claude_md}: not found")
@@ -435,12 +517,19 @@ def _check_agent_count_claim(root: Path) -> list[str]:
     remaining symlink alias. Missing/malformed manifest or a description
     without a count claim is NOT an invariant-8 error — the manifest problems
     are invariant 4's to report, and the claim is optional (only a stated
-    number must be true)."""
-    plugin_json = root / ".claude-plugin" / "plugin.json"
-    if not plugin_json.is_file():
+    number must be true).
+
+    OpenCode port: checks package.json description instead of .claude-plugin/plugin.json."""
+    # Try OpenCode package.json first, fall back to .claude-plugin/plugin.json
+    is_opencode = (root / "opencode.json").is_file()
+    if is_opencode:
+        manifest = root / "package.json"
+    else:
+        manifest = root / ".claude-plugin" / "plugin.json"
+    if not manifest.is_file():
         return []
     try:
-        data = json.loads(plugin_json.read_text(encoding="utf-8"))
+        data = json.loads(manifest.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, ValueError):
         return []
     description = data.get("description")
@@ -458,7 +547,7 @@ def _check_agent_count_claim(root: Path) -> list[str]:
     })
     if claimed != actual:
         return [
-            f"{plugin_json}: description claims {claimed}-agent but the tree "
+            f"{manifest}: description claims {claimed}-agent but the tree "
             f"has {actual} unique *_agent.md files (agents/ mirror aliases "
             f"excluded, symlinks deduplicated)"
         ]

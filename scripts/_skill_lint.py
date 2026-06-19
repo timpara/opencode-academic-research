@@ -23,7 +23,9 @@ from pathlib import Path
 import yaml
 
 SKIP_DIRS = frozenset(
-    {"shared", "scripts", "docs", ".git", ".github", "examples", ".local-plans", ".claude"}
+    {"shared", "scripts", "docs", ".git", ".github", "examples", ".local-plans",
+     ".claude", "skills", "tests", "evals", "hooks", "plugins", "agents",
+     "commands", "audits", "node_modules"}
 )
 
 
@@ -38,14 +40,28 @@ class FrontmatterError(Exception):
 
 
 def iter_skill_files(root: Path) -> list[Path]:
-    """Top-level SKILL.md files only. Skips SKIP_DIRS."""
+    """Top-level SKILL.md files only. Skips SKIP_DIRS.
+
+    Checks both <root>/<skill>/SKILL.md (upstream layout) and
+    <root>/skills/<skill>/SKILL.md (OpenCode port layout).
+    """
     results: list[Path] = []
+    # Check root-level skill dirs (upstream layout)
     for child in sorted(root.iterdir()):
         if not child.is_dir() or child.name in SKIP_DIRS:
             continue
         skill_md = child / "SKILL.md"
         if skill_md.is_file():
             results.append(skill_md)
+    # Check skills/ subdirectory (OpenCode port layout)
+    skills_dir = root / "skills"
+    if skills_dir.is_dir() and not results:
+        for child in sorted(skills_dir.iterdir()):
+            if not child.is_dir() or child.name in SKIP_DIRS:
+                continue
+            skill_md = child / "SKILL.md"
+            if skill_md.is_file():
+                results.append(skill_md)
     return results
 
 

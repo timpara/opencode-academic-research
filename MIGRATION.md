@@ -175,6 +175,10 @@ git push origin main --tags
 - **`shared/references/intent_clarification_protocol.md`** — `AGENTS.md` references this path. If upstream renames or moves it, fix the cross-reference.
 - **`scripts/check_v3_6_7_pattern_protection.py`** — hard-pins agent file paths. If upstream moves agent files, the lint will break in CI.
 - **`requirements-dev.txt`** — if upstream re-adds it (the port deleted it), keep the port's `pyproject.toml` as the source of truth and ignore upstream's file.
+- **`hooks/hooks.json`** — upstream maintains this for the Claude Code PreToolUse hook. The port deletes it (the guard is implemented in `plugins/ars-session-loaded.ts`). If upstream adds new hook entries, evaluate whether to port the behavior into the TypeScript plugin.
+- **`scripts/ars_write_scope_guard.py`** — the Python guard script is Claude Code-specific (emits Claude hook JSON, reads `CLAUDE_PLUGIN_ROOT`). The port keeps it for reference and test coverage but does not execute it. The OpenCode enforcement lives in `plugins/ars-session-loaded.ts`.
+- **CI workflows** — upstream's `.github/workflows/` reference `requirements-dev.txt` and `hooks/hooks.json`. The port replaces these with `pyproject.toml` (`pip install -e ".[dev]"`) and an OpenCode-compatible guard validation step.
+- **New slash commands** — upstream uses `model: sonnet` or `model: opus`. The port replaces with `agent: build` + `compatibility: opencode`. Check for new commands after every merge.
 
 ### Known pre-existing lint debt in `scripts/`
 
