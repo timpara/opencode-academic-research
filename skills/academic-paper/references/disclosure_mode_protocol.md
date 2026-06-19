@@ -30,7 +30,7 @@ If neither selector is supplied and the pipeline orchestrator does not infer one
 
 ## Why this mode exists
 
-`academic-paper` already ships two generic AI disclosure templates in `journal_submission_guide.md` ("Minimal Disclosure" and "Detailed Disclosure"). Those templates are a good starting point but they are venue-agnostic: they don't know that Nature requires disclosure in the Methods section specifically, that ICLR requires it in the paper body with acknowledgement that "LLMs were used as general-purpose writing tools", or that ACL requires the disclosure in a dedicated "Use of AI Assistance" subsection.
+`academic-paper` already ships two generic AI disclosure templates in `journal_submission_guide.md` ("Minimal Disclosure" and "Detailed Disclosure"). Those templates are a good starting point but they are venue-agnostic: they don't know that Nature requires disclosure in the Methods section specifically, that ICLR requires it in the paper body with acknowledgement that "LLMs were used as general-purpose writing tools", or that ACL requires the disclosure in the Acknowledgements section.
 
 The v3.2 venue track closes the venue-specific gap. The #108 anchor track closes the policy-framework-specific gap that emerges when authors target a policy anchor (PRISMA-trAIce SLR guideline, ICMJE recommendations, Nature Portfolio editorial policy, IEEE author guidelines) rather than a specific journal venue.
 
@@ -111,7 +111,7 @@ AI-assisted output was reviewed, edited, and verified by the authors,
 who take full responsibility for the content of this article.
 ```
 
-**Note**: Replace `[MODEL_VERSION]` with the actual model used in this run (e.g., `Opus 4.7`, `Sonnet 4.6`). Pull the identifier from session metadata rather than hard-coding a version, since Anthropic's lineup changes over time.
+**Note**: Replace `[MODEL_VERSION]` with the actual model used in this run (e.g., `Fable 5`, `Sonnet 4.6`). Pull the identifier from session metadata rather than hard-coding a version, since Anthropic's lineup changes over time.
 
 ### Phase 5: Placement instructions
 

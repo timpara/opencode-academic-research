@@ -36,6 +36,11 @@ ARS pipelines count words as `len(body.split())` in Python — that is, splits o
 - Whitespace runs collapse to one delimiter; they do not contribute tokens.
 - Empty strings between consecutive whitespace characters are filtered by `split()` with no argument.
 - Markdown formatting (`**bold**`, `*italic*`, `` `code` ``) is part of the surrounding token; the asterisks and backticks are not separate tokens.
+- ARS HTML-comment markers (see next section) — strip them before splitting.
+
+### HTML-comment markers (#390 — one rule for all marker kinds)
+
+ARS working drafts carry HTML-comment markers: `<!--ref:slug-->` / `<!--anchor:kind:value-->` (v3.7.1/v3.7.3, inline after citations) and `<!--block:BNNNN-->` (#390, one standalone line per block). **Strip every `<!--...-->` comment before computing `len(body.split())`.** Inline ref/anchor markers usually glue onto the preceding token (zero count impact) but add a token whenever whitespace precedes them; block markers are standalone lines and would inflate the total by one token per block — on a 60-block paper that is ~60 phantom words, and it would also corrupt `word_count_delta` (Schema 8) across patch-mode revision rounds. One rule covers every marker kind, current and future: markers are audit metadata, never countable content. (Phase 7 separately strips markers from converted final outputs — `formatter_agent.md` § ARS Marker Stripping — so publisher-side counts never see them either.)
 
 ---
 

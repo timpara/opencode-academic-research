@@ -17,8 +17,17 @@ Spec: docs/design/2026-05-15-issue-103-claim-alignment-audit-spec.md
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 from typing import Any, Callable
+
+# Share the true-partial content gate with the lint + runtime (single source of
+# truth in _claim_audit_constants). Mirror the bare-import form the other two
+# call sites use; ensure scripts/ is importable when this module is loaded as
+# `scripts.claim_audit_calibration` (test path) as well as bare.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _claim_audit_constants import is_true_partial_breakdown  # noqa: E402
 
 # Constraint id shape per spec §3.2 canonical parse rule (RE_NC_CONSTRAINT
 # + RE_MNC_CONSTRAINT in scripts/_claim_audit_constants.py).
@@ -73,7 +82,7 @@ class GoldSetValidationError(ValueError):
 
 
 def validate_gold_set(tuples: list[dict[str, Any]]) -> None:
-    """Validate the gold set per spec §7.7 rules (a)..(d).
+    """Validate the gold set per spec §7.7 rules (a)..(d) + rule (e) (#355).
 
     Raises GoldSetValidationError on the first failed rule. Returns None
     on success so the call site can ignore the return value — the
@@ -101,6 +110,15 @@ def validate_gold_set(tuples: list[dict[str, Any]]) -> None:
                         f"tuple {idx}: alignment tuple must not carry "
                         f"constraint field {forbidden!r} (rule (b))"
                     )
+            # Rule (e): a PARTIAL fixture must declare non-empty expected_sub_claims;
+            # without them `_breakdown_covers_expected` early-returns True and the
+            # #213 atomic-decomposition subset metric is silently bypassed.
+            if tup.get("expected_prompt_verdict") == "PARTIAL" and not tup.get("expected_sub_claims"):
+                raise GoldSetValidationError(
+                    f"tuple {idx}: PARTIAL fixture must declare non-empty "
+                    f"expected_sub_claims (rule (e); else the atomic-decomposition "
+                    f"subset metric is silently skipped)"
+                )
         else:  # constraint
             if expected not in CONSTRAINT_JUDGMENTS:
                 raise GoldSetValidationError(
@@ -194,6 +212,79 @@ def _derive_constraint_scope(constraint_id: str) -> str:
     )
 
 
+def _breakdown_covers_expected(
+    breakdown: Any, expected_sub_claims: Any
+) -> bool:
+    """True iff the judge's breakdown actually, atomically decomposes THIS claim.
+
+    `is_true_partial_breakdown` only proves the verdict MIX — a judge can pass it
+    with two generic lines. Each fixture declares `expected_sub_claims`:
+    `[{key_tokens: [...], sub_verdict: ...}, ...]`. Coverage requires a one-to-one
+    assignment of expected sub-claims to DISTINCT breakdown items where each item:
+      1. contains all of its expected sub-claim's key tokens (case-insensitive),
+      2. carries the expected sub_verdict, AND
+      3. is ATOMIC — it does NOT also contain the distinguishing key tokens of a
+         *different* expected sub-claim.
+
+    Rule 3 + the distinct-item requirement defeat the gaming vector (ship-gate
+    round-2 finding): a judge returning two items whose `sub_claim_text` is the
+    FULL claim text contains every expected token in both items, so neither item
+    is atomic and no valid one-to-one assignment exists. A genuine decomposition
+    puts each sub-claim's tokens in its own item.
+
+    Empty `expected_sub_claims` falls back to True (non-breaking); the shipped
+    #213 fixtures all declare them, with disjoint key tokens per sub-claim.
+    """
+    if not expected_sub_claims:
+        return True
+    if not isinstance(breakdown, list):
+        return False
+    items = [it for it in breakdown if isinstance(it, dict)]
+    if not all(isinstance(e, dict) for e in expected_sub_claims):
+        return False
+
+    def _item_text(item: dict[str, Any]) -> str:
+        text = item.get("sub_claim_text")
+        return text.lower() if isinstance(text, str) else ""
+
+    def _has_tokens(text_l: str, tokens: Any) -> bool:
+        return bool(tokens) and all(
+            isinstance(t, str) and t.lower() in text_l for t in (tokens or [])
+        )
+
+    def _matches(exp_idx: int, item: dict[str, Any]) -> bool:
+        expected = expected_sub_claims[exp_idx]
+        text_l = _item_text(item)
+        # 1. contains own tokens + 2. right verdict.
+        if not _has_tokens(text_l, expected.get("key_tokens")):
+            return False
+        exp_verdict = expected.get("sub_verdict")
+        if exp_verdict is not None and item.get("sub_verdict") != exp_verdict:
+            return False
+        # 3. atomic — must NOT also carry another expected sub-claim's tokens.
+        for other_idx, other in enumerate(expected_sub_claims):
+            if other_idx == exp_idx:
+                continue
+            if _has_tokens(text_l, other.get("key_tokens")):
+                return False
+        return True
+
+    # Greedy is sufficient because rule 3 makes the match relation a partial
+    # matching where each item matches at most one expected sub-claim (an item
+    # carrying two sub-claims' tokens matches neither). Require a distinct item
+    # per expected sub-claim.
+    used: set[int] = set()
+    for exp_idx in range(len(expected_sub_claims)):
+        match_idx = next(
+            (i for i, item in enumerate(items) if i not in used and _matches(exp_idx, item)),
+            None,
+        )
+        if match_idx is None:
+            return False
+        used.add(match_idx)
+    return True
+
+
 def _zero_division_safe(numerator: int, denominator: int) -> float:
     """Return rate with `nan` semantics for empty denominators.
 
@@ -265,6 +356,16 @@ def run_calibration(
     n_alignment = 0
     n_constraint = 0
 
+    # Partial-support subset (#213). A partial fixture is tagged
+    # expected_prompt_verdict=PARTIAL; its expected_judgment is UNSUPPORTED (B1),
+    # so the aggregate FNR scores a bare-UNSUPPORTED judge as a HIT and HIDES the
+    # exact regression #213 closes (judge stops decomposing). The subset metric
+    # counts a partial fixture as passed ONLY when the judge emits UNSUPPORTED
+    # AND a well-formed true-partial sub_claim_breakdown — so a bare-UNSUPPORTED
+    # judge registers a non-zero miss_rate here even while the aggregate stays green.
+    n_partial = 0
+    partial_misses = 0
+
     for tup in gold_set:
         kind = tup["tuple_kind"]
         expected = tup["expected_judgment"]
@@ -279,6 +380,16 @@ def run_calibration(
                 judge_model="calibration-stub",
             )
             actual = response["judgment"]
+            if tup.get("expected_prompt_verdict") == "PARTIAL":
+                n_partial += 1
+                breakdown = response.get("sub_claim_breakdown")
+                hit = (
+                    actual == "UNSUPPORTED"
+                    and is_true_partial_breakdown(breakdown)
+                    and _breakdown_covers_expected(breakdown, tup.get("expected_sub_claims"))
+                )
+                if not hit:
+                    partial_misses += 1
             # For each alignment one-vs-rest class in PER_CLASS_KEYS,
             # check whether this tuple contributes a TP / FN / FP / TN.
             for cls in ("SUPPORTED", "UNSUPPORTED", "AMBIGUOUS"):
@@ -351,6 +462,13 @@ def run_calibration(
         "FNR": _zero_division_safe(aggregate_FN, aggregate_n_positive),
         "FPR": _zero_division_safe(aggregate_FP, aggregate_n_negative),
         "per_class": per_class_report,
+        # Partial-support subset (#213). Additive block; absent partial fixtures
+        # yield n_partial=0 + miss_rate=0.0 (nothing to miss), so the block is
+        # non-breaking on a gold set without partial tuples.
+        "partial_support": {
+            "miss_rate": _zero_division_safe(partial_misses, n_partial),
+            "n_partial": n_partial,
+        },
         "thresholds": thresholds,
         "n_total": len(gold_set),
         "n_alignment": n_alignment,

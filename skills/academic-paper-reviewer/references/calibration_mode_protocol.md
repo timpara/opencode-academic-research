@@ -3,7 +3,7 @@
 **Status**: v3.2
 **Parent skill**: `academic-paper-reviewer`
 **Mode name**: `calibration`
-**Purpose**: Measure this reviewer's own false-negative rate (FNR), false-positive rate (FPR), and balanced accuracy against a user-supplied gold-standard set, then attach the resulting error profile as a confidence disclosure to subsequent reviews in the same session.
+**Purpose**: Measure this reviewer's own false-negative rate (FNR), false-positive rate (FPR), balanced accuracy, and **severity-miscalibration rate** (#215) against a user-supplied gold-standard set, then attach the resulting error profile as a confidence disclosure to subsequent reviews in the same session.
 
 ---
 
@@ -74,6 +74,20 @@ Borderline papers don't enter the binary matrix but are useful for rubric-score 
 
 A reviewer that confidently Accepts or Rejects borderline papers has a "confidence miscalibration" problem even if its binary accuracy looks fine.
 
+### Phase 3.5: Severity-miscalibration measurement (#215)
+
+The binary confusion matrix (Phase 2) measures decision-level error (FNR/FPR). It does **not** capture the paper's largest documented AI-reviewer failure: a finding that is content-correct but **severity-miscalibrated** — either a field-norm boundary error (Kim et al. 2026, W1, n=54) or the "would addressing this change the core result?" significance-boundary error (Kim §F.3.4, 56 errors). A reviewer can have a clean FNR/FPR and still systematically over- or under-rate the severity of individual findings.
+
+For each weakness the reviewer emitted across the gold runs, classify its **severity-miscalibration risk** as `low` / `med` / `high`:
+
+- **`high`** — the finding's severity rests on a field norm or the "core result" formula, AND the reviewer asserted the severity **without** grounding the norm in an external checkable source (the W1 / §F.3.4 failure shape).
+- **`med`** — severity depends on a field norm but the reviewer gave partial or weak grounding (named a standard but did not establish it applies to this subfield).
+- **`low`** — severity does not depend on a field norm, OR the norm is grounded in an external checkable source per the domain-reviewer Field-Norm Severity Discipline (Step 5).
+
+**Grounding discipline (do not repeat the failure you are measuring).** The classifier persona **MUST NOT** guess whether a norm is right from its own model knowledge — that is exactly the W1 behaviour under audit. It rates *whether the reviewer supplied external grounding*, not *whether the reviewer's norm is factually correct*. The reference shapes are anchored to the first-party regression fixture at `evals/gold/field_norm_severity/` (W1 + §F.3.4 cases extracted verbatim from Kim et al. 2026); a finding that matches a fixture shape but lacks grounding is `high`.
+
+This produces a histogram of low/med/high counts reported alongside FNR/FPR in Phase 4 — a severity-calibration signal the binary matrix cannot show.
+
 ### Phase 4: Produce the Calibration Report
 
 Output document structured as:
@@ -103,6 +117,15 @@ Cross-model: <yes/no, model families used>
 
 ## Per-dimension calibration error
 <table of 7 review dimensions with mean absolute calibration error>
+
+## Severity-miscalibration histogram (#215)
+<low/med/high counts over all emitted weaknesses, e.g.>
+| Risk | Count | Share |
+|---|---|---|
+| low | XX | XX% |
+| med | XX | XX% |
+| high | XX | XX% |
+<A high `high`-share means the reviewer frequently asserts field-norm / "core result" severities without external grounding — the W1 / §F.3.4 failure shape. This is a SEPARATE signal from FNR/FPR: a reviewer can pass the binary gate and still carry a high severity-miscalibration rate. Grounded per Phase 3.5; classifies grounding, not norm-correctness.>
 
 ## Systematic biases detected
 <natural-language narrative identifying patterns, e.g.
@@ -152,6 +175,24 @@ Calibration reports this reviewer's error profile on a **specific** gold set in 
 - Replace the `re-review` mode for revision verification
 
 If the user's gold set is itself biased (e.g., all papers from one lab, all from one year), calibration reports a biased profile. Emit a warning during intake if papers share obvious metadata clusters.
+
+### Same-family / rubric-aware judging — read the numbers as a possible under-estimate
+
+There is a second reason a measured profile can be optimistic, independent of the gold set. It belongs to the broader **same-source evaluation risk**, which has two forms:
+
+- **Factual form** — *same-source hallucination*: when the model that wrote the work and the model verifying it share training data, a fabricated reference that "feels right" passes undetected. This is the citation-integrity risk documented in the Anti-Hallucination Mandate (`academic-pipeline/agents/integrity_verification_agent.md`), countered there by independent reference lookup.
+- **Behavioral form** — *same-family rubric optimization* (rubric-aware judging): an evaluator may, to some degree, optimize toward *what the rubric appears to reward* rather than toward the correct judgment. When the produced-work model and the evaluator model are from the same family and may be rubric-aware, the calibration error you measure can be **optimistic — read it as a possible under-estimate of the true error, not a ceiling.**
+
+This is an interpretive caveat only. ARS does **not** detect, prevent, or correct rubric-aware judging — the behavior can be unverbalized and is not reliably visible in chain-of-thought. The note changes how you *read* the numbers; it does not change any threshold or gate.
+
+**Cross-model evaluation — stronger evidence where available.** Running the evaluation across model families provides **stronger evidence** than a same-family-only run; it still does **not** detect or rule out rubric-aware judging. Positioning:
+
+- In ordinary reviewer / judge paths, cross-model is **opt-in, "for best results"** — the citation-claim alignment judge already supports a non-default judge model, and the suite is designed to work single-model.
+- **Calibration mode is the exception**: calibration itself is opt-in, but once invoked `ARS_CROSS_MODEL` is **default-on** (see "Cross-model verification" under Phase 1) — at least one of the runs should use a different family when configured.
+- Absent cross-model is **warn-and-continue**, never a gate.
+- Sending a user's manuscript to another provider still requires the explicit consent / privacy step in `shared/cross_model_verification.md` — this recommendation does not weaken that boundary.
+
+**A single-model spot-check (weak, optional).** With no second model, you can reword the rubric and re-judge, then check whether the verdict changed. Be clear about what this does: it only tells you whether a *change of wording* shifts the judgment — surface wording sensitivity. It does **not** reveal whether the model is quietly optimizing toward the grader (that can be unverbalized), and a verdict that survives rewording is **not** evidence the judgment is correct — only that it is stable to that paraphrase. It is one model checking itself, so its power against grader-awareness is limited. No score, no threshold, no gate.
 
 ---
 

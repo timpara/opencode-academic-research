@@ -35,6 +35,83 @@ INV14_FAULT_CLASS_TAGS: tuple[str, ...] = (
 # Sampling strategy literal (S-INV schema constant).
 SAMPLING_STRATEGY = "stratified_buckets_v1"
 
+# Sub-claim breakdown sub_verdict enum (claim_audit_result.schema.json #213).
+# The "non-SUPPORTED" set is the valid OPPOSING verdicts only — a missing or
+# out-of-enum sub_verdict must NOT count as non-SUPPORTED, or a degenerate
+# breakdown `[SUPPORTED, <missing>]` would masquerade as true-partial.
+SUBCLAIM_VERDICTS: frozenset[str] = frozenset({"SUPPORTED", "UNSUPPORTED", "AMBIGUOUS"})
+SUBCLAIM_NON_SUPPORTED: frozenset[str] = frozenset({"UNSUPPORTED", "AMBIGUOUS"})
+
+
+def is_true_partial_breakdown(breakdown: object) -> bool:
+    """True iff `breakdown` is a well-formed true-partial decomposition (#213).
+
+    Single source of truth for the INV-19 true-partial test, shared by the lint
+    (`check_claim_audit_consistency.py`), the runtime
+    (`claim_audit_pipeline.py` PARTIAL normalization + judge-output validation),
+    and the calibration subset metric (`claim_audit_calibration.py`). A list of
+    >=2 dict items whose sub_verdicts include >=1 SUPPORTED AND >=1 valid
+    non-SUPPORTED ({UNSUPPORTED, AMBIGUOUS}). A missing / out-of-enum sub_verdict
+    is NOT counted as non-SUPPORTED.
+
+    NOTE: this is the *content-shape* gate only. The lint additionally pins the
+    enclosing row's judgment/defect_stage (INV-19) and the calibration subset
+    metric additionally matches the breakdown against each fixture's expected
+    sub-claims — neither of those belongs here.
+    """
+    if not isinstance(breakdown, list) or len(breakdown) < 2:
+        return False
+    verdicts = [item.get("sub_verdict") for item in breakdown if isinstance(item, dict)]
+    has_supported = any(v == "SUPPORTED" for v in verdicts)
+    has_non_supported = any(v in SUBCLAIM_NON_SUPPORTED for v in verdicts)
+    return has_supported and has_non_supported
+
+
+def _is_schema_shaped_item(item: object) -> bool:
+    """True iff a breakdown item satisfies the schema item shape (#213).
+
+    Each item MUST be a dict with a non-empty-string `sub_claim_text` and a
+    `sub_verdict` in the closed enum. The runtime needs this BEFORE it copies an
+    item onto an emitted row — `is_true_partial_breakdown` only checks the verdict
+    *mix*, so a degenerate item like `{"sub_verdict": "UNSUPPORTED"}` (no text)
+    passes the mix gate but would emit `sub_claim_text: None`, a schema-invalid
+    completed row (ship-gate round-2 finding).
+
+    Validates the fields the runtime COPIES onto the row against the
+    claim_audit_result.schema.json item shape: non-empty string sub_claim_text
+    (<=1000), sub_verdict in the enum, and evidence_pointer — if present — a
+    string (<=1000) or null. Extra keys are not rejected here because the runtime
+    copy keeps only these three; but the copied fields' TYPES must be valid or a
+    wrong-typed evidence_pointer (e.g. a number) would reach a completed row and
+    violate the schema (ship-gate round-3 finding).
+    """
+    if not isinstance(item, dict):
+        return False
+    text = item.get("sub_claim_text")
+    if not isinstance(text, str) or not text.strip() or len(text) > 1000:
+        return False
+    if item.get("sub_verdict") not in SUBCLAIM_VERDICTS:
+        return False
+    if "evidence_pointer" in item:
+        ep = item["evidence_pointer"]
+        if ep is not None and (not isinstance(ep, str) or len(ep) > 1000):
+            return False
+    return True
+
+
+def is_emittable_partial_breakdown(breakdown: object) -> bool:
+    """True iff `breakdown` is true-partial AND every item is schema-shaped (#213).
+
+    The runtime validation gate before a PARTIAL is normalized onto a *completed*
+    row: it must be a genuine partial (`is_true_partial_breakdown`) AND every item
+    must carry a non-empty sub_claim_text + valid sub_verdict, so the copied row
+    satisfies the item schema. A breakdown that is true-partial by mix but has a
+    malformed item is a judge parse failure, NOT a completed row.
+    """
+    if not is_true_partial_breakdown(breakdown):
+        return False
+    return all(_is_schema_shaped_item(item) for item in breakdown)
+
 # rule_version literals for v3.8.0 release. Future revisions bump the literal
 # and require re-lint per spec §3.3 / §3.4 / §3.5.
 UNCITED_RULE_VERSION = "D4-c-v1"
@@ -43,6 +120,30 @@ DRIFT_RULE_VERSION = "D4-a-v1"
 # Distinct prefix from D4-c-v1 (uncited_assertion D4-c detector) and
 # D4-a-v1 (constraint_violation) so the lint can route by literal.
 UAF_RULE_VERSION = "D4-c-v1-uaf-v1"
+
+# #361 — judge-prompt version, a HUMAN-READABLE LABEL ONLY. The judge prompt
+# text lives in academic-pipeline/agents/claim_ref_alignment_audit_agent.md
+# (### Step 5 — Judge invocation) and is supplied to the pipeline via an injected
+# judge_fn, so the pipeline cannot hash the prompt text itself. This literal is a
+# friendly name for the current prompt revision (e.g. the #213 Step-0
+# sub-claim-decomposition prompt); BUMP IT whenever the judge prompt changes so
+# logs/diffs read clearly. It is NO LONGER the judge-cache-key source of truth —
+# the cache key tracks JUDGE_PROMPT_SHA256 below (the prompt fingerprint), which
+# the lint keeps in lockstep with the prompt text. Decoupling the two means a
+# forgotten label bump can never leave stale cache entries valid.
+JUDGE_PROMPT_VERSION = "step0-decomp-v1"
+
+# #361 backstop: SHA-256 of the canonical judge-prompt section (the text between
+# the JUDGE-PROMPT-CANONICAL-START/END markers in
+# academic-pipeline/agents/claim_ref_alignment_audit_agent.md, stripped).
+# scripts/check_judge_prompt_version.py recomputes this hash and fails CI if it
+# drifts — forcing a human to update this hash whenever the prompt text changes.
+# This hash DOUBLES AS the judge-cache-key prompt component (the single source of
+# truth for cache invalidation): claim_audit_pipeline.py defaults
+# prompt_version to this value, so because the lint pins the hash to the prompt
+# text, any prompt edit automatically changes the cache key and invalidates stale
+# entries — no reliance on a separate human-readable label bump.
+JUDGE_PROMPT_SHA256 = "cdd5ba2d681ea6d6422a017fb122f36a9d62edb32f9d27bd98dbaad1f807b058"
 
 # Constraint id parse rules (spec §3.2 + INV-17 canonical form).
 RE_NC_CONSTRAINT = re.compile(r"^NC-C([0-9]{3,})-([0-9]+)$")

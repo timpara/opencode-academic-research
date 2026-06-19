@@ -1,6 +1,7 @@
 # OpenCode 向け Academic Research Skills
 
-[![Version](https://img.shields.io/badge/version-v3.9.4.2--opencode.1-blue)](https://github.com/timpara/opencode-academic-research/releases)
+[![Version](https://img.shields.io/badge/version-v3.13.0--opencode.1-blue)](https://github.com/timpara/opencode-academic-research/releases)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20696614.svg)](https://doi.org/10.5281/zenodo.20696614)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Upstream](https://img.shields.io/badge/upstream-academic--research--skills-orange)](https://github.com/timpara/academic-research-skills)
 
@@ -20,7 +21,7 @@ bun install    # @opencode-ai/plugin をインストール（session-loaded plug
 uv sync --extra dev  # Python 検証スクリプトの依存関係をインストール
 ```
 
-インストール後、OpenCode を開いて `/ars-plan` を実行すると、ARS がソクラテス式対話で章構成を整理します。詳しい手順は [Quick install](#quick-install) を参照してください。
+インストール後、OpenCode を開いて `/ars-plan` を実行すると、ARS がソクラテス式対話で章構成を整理します。詳しい手順は [クイックインストール](#クイックインストール) を参照してください。
 
 > **AI はあなたの副操縦士であり、操縦士ではありません。** このツールはあなたの代わりに論文を書きません。参考文献の探索、引用のフォーマット、データ検証、論理的整合性チェックといった泥臭い作業を引き受けることで、本当に頭を使う必要のある部分 — 問いの定義、手法の選択、データの意味の解釈、「私はこう主張する」に続く文を書くこと — にあなたが集中できるようにします。
 >
@@ -46,7 +47,7 @@ v3.3 は [**PaperOrchestra**](https://arxiv.org/abs/2604.05018)（Song, Song, Pf
 
 アーキテクチャドキュメントは、以前ここにあった煩雑なパイプライン説明を引き継ぎます。*どのステージで何が実行されるか* に関する情報はすべて一箇所に集約されています。
 
-## Quick install
+## クイックインストール
 
 **前提条件**
 
@@ -102,6 +103,7 @@ uv sync --extra dev
 - **Task Type Annotation**（v3.3.2+）— 各スキルが `task_type`（`open-ended` または `outcome-gradable`）を宣言。現在の ARS スキルはすべて `open-ended`。
 - **Benchmark Report Schema**（v3.3.5+）— 誠実なベンチマーク比較のための JSON Schema + lint。[`shared/benchmark_report_pattern.md`](shared/benchmark_report_pattern.md) を参照。
 - **Artifact Reproducibility Lockfile**（v3.3.5+）— Material Passport 上のオプションの `repro_lock` サブブロック。**設定ドキュメントであり、再生保証ではありません** — LLM 出力はバイト再現可能ではありません。[`shared/artifact_reproducibility_pattern.md`](shared/artifact_reproducibility_pattern.md) を参照。
+- **実験来歴インテーク**（#260）— Material Passport のオプションの `experiment_provenance[]` は、研究者が**外部で**実行した実験を記録し（ARS は実験を実行しません）、論文の主張は `claim_intent_manifest.planned_experiment_ids[]` 経由でそれに join します。整合性ゲート（Stage 2.5/4.5）は実験裏付け主張を宣言された来歴と照合します — `ALIGNED` / `OVERSTATED` / `NOT_SUPPORTED_BY_PROVENANCE` / `PROVENANCE_INSUFFICIENT` — **ただし実験自体の正しさは判定しません**。fail-closed な `experiment_intake_declaration` により「実験を実行したか」が Stage 1 の明示的な決定になります。[`shared/handoff_schemas.md`](shared/handoff_schemas.md) を参照。
 
 ---
 
@@ -166,7 +168,7 @@ You: "status"
 
 ### 個別スキル
 
-#### Deep Research（7 モード）
+#### Deep Research（8 モード）
 
 ```
 "Research the impact of AI on higher education"       → full モード
@@ -178,7 +180,7 @@ You: "status"
 "Review this paper's research quality"                → review モード
 ```
 
-#### Academic Paper（10 モード）
+#### Academic Paper（11 モード）
 
 ```
 "Write a paper on X"                                  → full モード
@@ -247,19 +249,19 @@ You: "status"
 
 エージェントごとの責務とステージごとの成果物は [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) に集約されました。リリースメタデータを一箇所にまとめるため、バージョン番号はここにアンカーされています。
 
-### Deep Research（v2.8）
+### Deep Research（v2.11.0）
 
-13 エージェントの研究チーム。モード: full、quick、review、lit-review、fact-check、socratic、systematic-review。完全なエージェント名簿と成果物: ARCHITECTURE.md §3 を参照。
+13 エージェントの研究チーム。モード: full、quick、review、lit-review、three-way-scan、fact-check、socratic、systematic-review。完全なエージェント名簿と成果物: ARCHITECTURE.md §3 を参照。
 
-### Academic Paper（v3.0）
+### Academic Paper（v3.2.0）
 
-12 エージェントの論文執筆パイプライン。モード: full、plan、outline-only、revision、revision-coach、abstract-only、lit-review、format-convert、citation-check、disclosure。出力: MD + DOCX（利用可能な場合 Pandoc 経由）+ LaTeX（APA 7.0 `apa7` クラス / IEEE / Chicago）→ tectonic 経由 PDF。完全なエージェント名簿とフェーズごとの責務: ARCHITECTURE.md §3 を参照。
+12 エージェントの論文執筆パイプライン。モード: full、plan、outline-only、revision、revision-coach、abstract-only、lit-review、format-convert、citation-check、disclosure、rebuttal-audit。出力: MD + DOCX（利用可能な場合 Pandoc 経由）+ LaTeX（APA 7.0 `apa7` クラス / IEEE / Chicago）→ tectonic 経由 PDF。完全なエージェント名簿とフェーズごとの責務: ARCHITECTURE.md §3 を参照。
 
-### Academic Paper Reviewer（v1.8）
+### Academic Paper Reviewer（v1.10.0）
 
 **0-100 品質ルーブリック** を持つ 7 エージェントの多視点レビュー。モード: full、re-review、quick、methodology-focus、guided、calibration。**決定マッピング:** ≥80 Accept、65-79 Minor Revision、50-64 Major Revision、<50 Reject。初回レビューチーム vs. 限定的な再レビューチームの境界: ARCHITECTURE.md §3 Stage 3 / Stage 3' を参照。
 
-### Academic Pipeline（v3.7）
+### Academic Pipeline（v3.13.0）
 
 整合性検証、二段階レビュー、ソクラテス式コーチング、コラボレーション評価を持つ 10 ステージのオーケストレーター。パイプライン保証: 各ステージにユーザー確認チェックポイントが必要。整合性検証（Stage 2.5 + 4.5）はスキップできない。R&R Traceability Matrix（Schema 11）は著者の改訂主張を独立に検証する。v3.4 は Stage 2.5 / 4.5 に Compliance Agent（PRISMA-trAIce + RAISE）を追加した。v3.5 はすべての FULL/SLIM チェックポイントとパイプライン完了時に **Collaboration Depth Observer**（`collaboration_depth_agent`、advisory のみ — 決してブロックしない）を追加する。MANDATORY 整合性ゲート（2.5 / 4.5）は、コンプライアンスチェックが希薄化されないよう observer を明示的にスキップする。Wang & Zhang（2026）, IJETHE 23:11 に基づく。エージェント、成果物、ゲートを含むステージごとのマトリクス: ARCHITECTURE.md §3 を参照。
 
@@ -334,13 +336,43 @@ https://github.com/Imbad0202/academic-research-skills
 
 **[mchesbro1](https://github.com/mchesbro1)** — 上流貢献者。IS Basket of 8 ジャーナルを最初に提案・起草。
 
-**[cloudenochcsis](https://github.com/cloudenochcsis)** — 上流貢献者。IS セクションを *Basket of 8* から完全な *Senior Scholars' Basket of 11* に拡張。
+**[cloudenochcsis](https://github.com/cloudenochcsis)** — 貢献者。IS セクションを *Basket of 8* から完全な *Senior Scholars' Basket of 11* に拡張 — *Decision Support Systems*、*Information & Management*、*Information and Organization* を追加（[Issue #7](https://github.com/Imbad0202/academic-research-skills/issues/7)、[PR #8](https://github.com/Imbad0202/academic-research-skills/pull/8)）。出典: [AIS Senior Scholars' List of Premier Journals](https://aisnet.org/research/seniorscholarsbasket/)。
 
 **[eltociear](https://github.com/eltociear)**（Ikko Eltociear Ashimine）— 上流貢献者。日本語版 README を翻訳。
 
 ---
 
 ## Changelog
+
+### v3.13.0 (2026-06-18) — フック移植性、プロバイダ非依存の検証、ガード正確性
+
+> インストール／実行面を堅牢化し、クロスモデルの到達範囲を広げた minor release。**修正：** git-clone + symlink インストール構成でも write-scope ガードがユーザー自身の `CLAUDE.md` を誤って拒否しなくなった（#459、#448/#449 の残り半分を解消——`CLAUDE.md` は enforcement を担うファイルではなくドキュメントなので infra 保護リストから外し、担保ファイルはすべて保護を維持）。Windows の Python フック移植性 + Python 非在時の graceful degradation を、0-byte の Microsoft Store `python3` スタブを拒否しフックログを汚さないクロスプラットフォーム `hooks/run_guard.sh` launcher で実現（#454）。`draft_writer` の dual-phase static union を文書化 + Windows POSIX-safe なパスマッチング（#451）。**追加：** grounded first-party OpenAI と並んで OpenAI 互換エンドポイント（MiMo、DeepSeek、セルフホスト）を受け付けるプロバイダ非依存のクロスモデル検証（first-party は決して暗黙的にダウングレードしない）（#455）。opt-in の Socratic 隣接フレーミング probe（STORM 由来の視点拡張、`ARS_SOCRATIC_ADJACENT_PROBE=1`、デフォルト OFF、prose-layer のみ——`deep-research` 2.10.0 → 2.11.0）（#461）。`academic-pipeline` はスイートに合わせて v3.13.0、`academic-paper` と `academic-paper-reviewer` は変更なし。issue ごとの詳細は `CHANGELOG.md` を参照。
+
+### v3.12.1 (2026-06-15) — 査読応答トリアージモード（PR #433 統合）
+
+> ARS のモードベース・アーキテクチャに従い、外部コントリビューションの真に新規な部分を既存スキルのモードとして取り込んだ patch release。**新モード：** `deep-research` `three-way-scan` —— `quick` と `lit-review` の中間に位置する軽量な WHY/HOW/WHAT 論文比較トリアージ。論文ごとのショートリストと論文間の統合を生成（`deep-research` 2.9.4 → 2.10.0）。`academic-paper` `rebuttal-audit` —— 著者の既存リバッタル／応答ドラフトを査読コメントと突き合わせる独立アドバイザリ QA（コメントごとのカバレッジ表 + ギャップリスト + トーン／根拠／誤読のリスクフラグ）。何も生成せず、スタンドアロン実行時は Schema 11／Material Passport 書き込み／`ready_to_submit` を明示的に抑制（mutation カバレッジ付きの `check_rebuttal_audit_guard()` lint で強制）。加えて `revision-coach` のスコープを反論／不同意の姿勢と非ジャーナル文脈に拡張、`/ars-3w` + `/ars-rebuttal-audit` スラッシュコマンドを追加。入力形状でルーティング：査読コメント AND ドラフト → `rebuttal-audit`、コメントのみ → `revision-coach`。[@Yaobin29](https://github.com/Yaobin29) の [PR #433](https://github.com/Imbad0202/academic-research-skills/pull/433) から統合。スイートのモード数 25 → 27（スキルは 4 つのまま）。issue ごとの詳細は `CHANGELOG.md` を参照。
+
+### v3.12.0 (2026-06-08) — Kong 自動研究フィーチャートラック：実験来歴・図表フィデリティ・論文間矛盾・部分証拠の分解
+
+> **[machine-translated]** この項目は機械翻訳であり、ネイティブ contributor によるレビュー待ちです。正本は英語版 CHANGELOG です。
+
+> Kong et al.（2026、arXiv:2605.18661）の自動研究フィーチャートラックと、部分証拠トラップの分解作業を出荷するマイナーリリース。いずれも個別にレビュー・マージ済み。**新機能：** 実験来歴インテイク + クレーム↔実験アラインメント — 実験に裏付けられたクレームのための schema-first な証拠台帳層で、インテイクとアラインメントのみ（学者が外部で実験を実行し、ARS は決して実行しない）（#260）；キャプションの解釈がデータから導けるか、論文がそのアーティファクトを実際に裏付けるクレームのために引用しているかを検査する図表フィデリティゲート（#261）；評価済みの論文ペアを学者の確認用に列挙可能にする構造化された論文間矛盾インベントリ（#262）；引用判定（#213）と編集統合（#214）の両層で判定前にサブクレーム分解を行い、両層で §F.3.2 部分証拠トラップを収束させる。**ガイダンス・解釈層：** レポート生成レビュアーへの簡潔出力 + 圧力耐性境界の強化（#274）；同一ファミリ／rubric-aware 較正の認識論的注記（#273）；検索コンテンツの命令／データ境界を常設原則として明文化（#367）。**ネガティブスコープ：** Kong META（#255）をクローズし、`POSITIONING.md` に ARS が行わない 5 つの自律的メカニズムを列挙する「拒否されたメカニズム」セクションと 2 つの Tier D 設計教訓ドキュメントを追加。**リリース規律 lint：** version-consistency 不変条件 5–7（#357）と ARCHITECTURE コンポーネントバージョン監査（#345）。さらにクロスモデル grounding ガード（#346 / #349 / #351）、引用ゲートのキャッシュキーと rationale 上限（#359 / #360 / #361）、eval ゴールドセット（#250）、ACL/EMNLP 開示の再接地（#242）の正確性修正を含む。新しいスキーマ、manifest フィールド、すべての不変条件は追加的で後方互換。`academic-pipeline` は suite に追従して v3.12.0、他の 3 つの skill バージョンは変更なし。issue ごとの詳細は `CHANGELOG.md` を参照。
+
+### v3.11.1 (2026-06-06) — 出荷後の正確性・堅牢化・来歴の修正ロールアップ
+
+> v3.11.0 出荷後に表面化した修正をまとめたパッチリリース。いずれも個別にレビュー・マージ済み: integrity-verification + collaboration-depth パスへのクロスモデル同意ゲート拡張 (#322)、エントリ単位の OpenAlex + Crossref バックフィル並列化 (#138)、および引用存在性ゲート・v3.10 ポリシー層・eval ハーネス・ドメイン証拠プロファイル・#310 セキュリティ境界のエッジケースにまたがる 7 件の正確性/堅牢化修正 (#323 / #327 / #328 / #329 / #331 / #332 / #333) — うち 2 件は P1 (#327 no-handoff パスでのドメインプロファイル起動、#328 eval ハーネスのクラス別しきい値ゲート)。新機能なし、破壊的スキーマ変更なし。issue ごとの詳細は `CHANGELOG.md` を参照。
+
+### v3.11.0 (2026-06-04) — 決定論的引用検証ゲート（#182）
+
+> **[machine-translated]** この項目は機械翻訳であり、ネイティブ contributor によるレビュー待ちです。正本は英語版 CHANGELOG です。
+
+> LLM ピアレビューとは独立に動作する**決定論的な引用存在性検証ゲート**を追加。各引用は最大 4 つの書誌インデックス（Semantic Scholar、OpenAlex、Crossref、および新規の **arXiv resolver**、`scripts/arxiv_client.py`、API キー不要）と照合され、引用ごとの `lookup_verified` 状態（`{true, false, unresolvable}`）が統一サマリに書き込まれる。捏造された、解決できない DOI/arXiv ID を持つ引用は、レビュー agent が気づくことを期待するのではなく、lookup によって検出・マークされる（ユーザーが strict を選択したときのみ終止に昇格）。このゲートは **v3.10 の `terminal_policies` opt-in モデルを継承**する。検出は常に実行されるが、`lookup_verified == false` の行が終止的になるのはユーザーが `terminal_policies.citation_existence == strict` を選択したときのみで、デフォルトの挙動は advisory（`/ars-mark-read` で承認可能）である。`false` の定義は意図的に **ID-keyed unmatched に限定**（正確な DOI/arXiv で照会して解決できないことが証明された場合）されており、正当だが未索引の人文系 / 非英語 / 地域ジャーナルの引用は `unresolvable` に分類され、決してブロックされない（ドキュメントに明記された「精度優先・再現率劣後」のトレードオフ）。本バージョンには永続的な SQLite 検証 cache（`~/.cache/ars/verification.db`、90 日 TTL）と `/ars-cache-invalidate` コマンド、独立した `verification_gate` API と `verify_passport.py` CLI、および v3.9.0 の汚染トライアンギュレーション行列を 4 インデックス（k=0..4、すべて advisory）へ拡張したものも含まれる。`academic-pipeline` は suite に追従して v3.11.0、他の 3 つの skill バージョンは変更なし。仕様: `docs/design/2026-05-21-v3.10-182-promote-citation-gate-spec.md`（§0 amendment + C-V6）。
+
+### v3.10.0 (2026-06-01) — トライアンギュレーション・ポリシー層、Kong サーベイ採用、評価ハーネス、スコープ書き込みガード
+
+> *[machine-translated, pending native review by @eltociear]*
+>
+> オプトインの汚染トライアンギュレーション **terminal ポリシー層**（#127、デフォルトの引用挙動は v3.9.0 と byte-equivalent）、**Kong et al. 2026 サーベイ採用**（Rebuttal Commitment Ledger #256/#266/#268/#269、分野別の domain evidence profile #259）、**v3.10 計測基盤**（汎用化された評価 gold set + ranking-lift CI gate #184）、**scoped-write guard MVP**（#134、23 個の単一フェーズ subagent を各自の phase ディレクトリに囲い込み、Bash を禁止して Grep/Glob と構造化編集ツールに誘導する deterministic な `PreToolUse` hook）、`/ars-mark-read` plugin コマンド（#190）と broken-on-arrival 修正（#195）、簡体字中国語 README（#185）、CI 強化（#156/#155）をまとめた minor release。`academic-paper` → v3.2.0、`academic-paper-reviewer` → v1.10.0、`academic-pipeline` → v3.10.0。
 
 ### v3.9.4.2 (2026-05-19) — PR #149 CI 規律ゲートのポストシップホットフィックス（codex post-ship）
 
@@ -561,7 +593,7 @@ Lu ら（2026、*Nature* 651:914-919）からの洞察を統合 — ブライン
 
 ### v3.1.1 (2026-04-09) — IS Senior Scholars' Basket of 11
 
-外部貢献: [@mchesbro1](https://github.com/mchesbro1) が IS Basket of 8 ジャーナルを最初に提案・起草（[Issue #5](https://github.com/Imbad0202/academic-research-skills/issues/5)）。[@cloudenochcsis](https://github.com/cloudenochcsis) が完全な Senior Scholars' Basket of 11 に拡張（[Issue #7](https://github.com/Imbad0202/academic-research-skills/issues/7)、[PR #8](https://github.com/Imbad0202/academic-research-skills/pull/8)）。`academic-paper-reviewer/references/top_journals_by_field.md` Section 7 を更新し、*Decision Support Systems*、*Information & Management*、*Information and Organization* を追加。出典: [AIS Senior Scholars' List of Premier Journals](https://aisnet.org/page/SeniorScholarListofPremierJournals)。
+外部貢献: [@mchesbro1](https://github.com/mchesbro1) が IS Basket of 8 ジャーナルを最初に提案・起草（[Issue #5](https://github.com/Imbad0202/academic-research-skills/issues/5)）。[@cloudenochcsis](https://github.com/cloudenochcsis) が完全な Senior Scholars' Basket of 11 に拡張（[Issue #7](https://github.com/Imbad0202/academic-research-skills/issues/7)、[PR #8](https://github.com/Imbad0202/academic-research-skills/pull/8)）。`academic-paper-reviewer/references/top_journals_by_field.md` Section 7 を更新し、*Decision Support Systems*、*Information & Management*、*Information and Organization* を追加。出典: [AIS Senior Scholars' List of Premier Journals](https://aisnet.org/research/seniorscholarsbasket/)。
 
 ### v3.1 (2026-04-06) — Anti-Context-Rot + 認知フレームワーク + リーンサイズ
 

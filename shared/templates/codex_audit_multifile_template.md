@@ -4,7 +4,7 @@
 
 **Audience:** ARS pipeline orchestrator (academic-pipeline, deep-research, academic-paper) producing codex audit prompts for Phase 2 / Phase 3 deliverables. Human authors running ad-hoc cross-model review on a deliverable bundle.
 
-**Why this template exists:** Live ARS pipeline runs surfaced 18 downstream-agent hallucination/drift patterns (spec §3) that single-file or single-dimension audit could not catch. The patterns interact across files (synthesis_agent's effect-inventory drift surfaces only when comparing two narrative sections; report_compiler_agent's compression overclaim surfaces only when comparing abstract against body). A multi-file audit prompt with explicit dimensions makes the cross-file checks first-class. Spec §4.1 (Lesson D1) records the empirical observation that multi-file parallel audit catches more findings per round than sequential single-file audit at comparable token cost.
+**Why this template exists:** Live ARS pipeline runs surfaced 17 downstream-agent hallucination/drift patterns (spec §3) that single-file or single-dimension audit could not catch. The patterns interact across files (synthesis_agent's effect-inventory drift surfaces only when comparing two narrative sections; report_compiler_agent's compression overclaim surfaces only when comparing abstract against body). A multi-file audit prompt with explicit dimensions makes the cross-file checks first-class. Spec §4.1 (Lesson D1) records the empirical observation that multi-file parallel audit catches more findings per round than sequential single-file audit at comparable token cost.
 
 This template fixes a single audit-prompt structure so the orchestrator's audit hooks (spec §5) generate consistent, reproducible prompts.
 

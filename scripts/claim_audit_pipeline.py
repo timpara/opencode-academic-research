@@ -29,11 +29,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _claim_audit_constants import (  # noqa: E402
     DRIFT_RULE_VERSION,
     INV6_RATIONALE_PREFIX,
+    JUDGE_PROMPT_SHA256,
     RE_NC_CONSTRAINT,
     SAMPLING_STRATEGY,
     SENTINEL_MANIFEST_ID,
     UAF_RULE_VERSION,
     UNCITED_RULE_VERSION,
+    is_emittable_partial_breakdown,
 )
 
 # Permitted UNSUPPORTED defect_stages for non-constraint paths (§3.1 matrix).
@@ -60,6 +62,72 @@ def _stable_json(value: Any) -> str:
 
 def _hash_text(text: str | None) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+# claim_audit_result.rationale schema maxLength (#355 P2#3). A judge/retrieval
+# failure detail that embeds the offending payload's repr must fit here, or the
+# "clean inconclusive" fallback row it produces is itself schema-invalid. Every
+# JudgeInvocationError / RetrievalInvocationError detail ends up in a row's
+# rationale via `f"{fault_class}: {detail}"`, so the bound lives in those
+# exceptions' constructors (single choke point) rather than at each raise site.
+_RATIONALE_MAX_LEN = 2000
+_RATIONALE_TRUNC_MARK = "…[truncated]"
+# Widest fault-class prefix across both exception families ("retrieval_network_error: ").
+_WIDEST_FAULT_PREFIX = "retrieval_network_error: "
+
+
+def _clamp_to_rationale_budget(text: str, *, reserved: int) -> str:
+    """Clamp `text` so that `reserved + len(result)` fits the rationale maxLength.
+
+    Single length-budgeting choke point for every untrusted string that lands in
+    a row's `rationale` (#355 P2#3 / #360). `reserved` is the number of chars the
+    caller will prepend before this text reaches the rationale field:
+
+    - Failure paths emit ``f"{fault_class}: {detail}"`` → reserved = widest
+      fault-class prefix width, so the worst-case composed rationale still fits.
+    - Success paths copy a judge's own `rationale` verbatim onto the row → no
+      prefix → reserved = 0.
+
+    Truncation preserves the diagnostic head (which says WHAT the string is) and
+    marks the dropped tail, so a short string that already fits passes through
+    byte-for-byte.
+    """
+    budget = _RATIONALE_MAX_LEN - reserved
+    if len(text) <= budget:
+        return text
+    keep = budget - len(_RATIONALE_TRUNC_MARK)
+    return text[:keep] + _RATIONALE_TRUNC_MARK
+
+
+def _bounded_failure_detail(message: str) -> str:
+    """Clamp a failure detail so ``f"{fault_class}: {detail}"`` fits the maxLength.
+
+    A malformed payload's repr embedded in `message` (a >1000-char
+    sub_claim_text, an over-decomposed breakdown, a giant non-string
+    judgment/method) can push the detail past the rationale maxLength, making the
+    fallback row schema-invalid (#355 P2#3). Budgets against the widest
+    fault-class prefix so the composed rationale fits for every fault class.
+    """
+    return _clamp_to_rationale_budget(message, reserved=len(_WIDEST_FAULT_PREFIX))
+
+
+def _bounded_judge_rationale(rationale: Any) -> str:
+    """Clamp a judge-supplied `rationale` copied verbatim onto a SUCCESS-path row.
+
+    The judge is an LLM with no pre-emission length guarantee; an over-long
+    `rationale` makes a *clean* completed / constraint_violation row
+    schema-invalid (#360 — the success-path parallel to the #359 fallback fix).
+    No fault-class prefix is prepended on the success path, so reserved = 0.
+
+    `_validate_judge_dict` only checks that the `rationale` key is present, not
+    that its value is a string — a JSON-null (or otherwise non-string) rationale
+    passes that gate. Return "" for a non-string value so each caller's existing
+    fallback (`... or "(no rationale provided)"` / the constraint default) takes
+    over, rather than calling len() on it and aborting the audit run.
+    """
+    if not isinstance(rationale, str):
+        return ""
+    return _clamp_to_rationale_budget(rationale, reserved=0)
 
 
 def _active_constraints_for_claim(
@@ -98,6 +166,7 @@ def _cache_key(
     retrieved_excerpt: str | None,
     active_constraints: list[dict[str, Any]],
     judge_model: str,
+    prompt_version: str,
 ) -> str:
     payload = {
         "claim_text_hash": _hash_text(claim_text),
@@ -109,6 +178,11 @@ def _cache_key(
             _stable_json([{"constraint_id": c["constraint_id"], "rule": c["rule"]} for c in active_constraints])
         ),
         "judge_model": judge_model,
+        # #361: a judge-prompt revision partitions the keyspace — a verdict
+        # cached under one prompt is never served against new prompt logic.
+        # judge_model and prompt_version stay separate components (independent
+        # axes of judge behavior).
+        "prompt_version": prompt_version,
     }
     return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
 
@@ -127,12 +201,31 @@ def _cache_key(
 # into _judge_result_entry where the ValueError would abort the audit
 # (Step 13 R3 codex P2 #2).
 _CITED_PATH_JUDGMENTS: frozenset[str] = frozenset(
-    {"SUPPORTED", "UNSUPPORTED", "AMBIGUOUS", "VIOLATED"}
+    {"SUPPORTED", "UNSUPPORTED", "AMBIGUOUS", "PARTIAL", "VIOLATED"}
 )
+# PARTIAL is a cited-path-only verdict (a reference can support some sub-claims
+# but not others). The uncited path has no reference to be partial against, so
+# it stays the constraint VIOLATED/NOT_VIOLATED binary (#213).
 _UNCITED_PATH_JUDGMENTS: frozenset[str] = frozenset({"VIOLATED", "NOT_VIOLATED"})
 
 
-class JudgeInvocationError(Exception):
+class _AuditInvocationError(Exception):
+    """Base for audit-tool invocation failures (judge / retrieval).
+
+    Carries an INV-14 fault-class tag + detail. The detail is bounded so the
+    `f"{fault_class}: {detail}"` rationale it becomes fits the claim_audit_result
+    schema maxLength (#355 P2#3) — every subclass's detail flows to a row
+    rationale, so the bound lives here (single choke point).
+    """
+
+    def __init__(self, fault_class: str, detail: str) -> None:
+        detail = _bounded_failure_detail(detail)
+        super().__init__(f"{fault_class}: {detail}")
+        self.fault_class = fault_class
+        self.detail = detail
+
+
+class JudgeInvocationError(_AuditInvocationError):
     """Raised by `_invoke_judge` when judge_fn fails or returns malformed output.
 
     Carries the INV-14 fault-class tag + detail so the caller can emit a
@@ -141,13 +234,8 @@ class JudgeInvocationError(Exception):
     audit pass.
     """
 
-    def __init__(self, fault_class: str, detail: str) -> None:
-        super().__init__(f"{fault_class}: {detail}")
-        self.fault_class = fault_class
-        self.detail = detail
 
-
-class RetrievalInvocationError(Exception):
+class RetrievalInvocationError(_AuditInvocationError):
     """Raised by `_invoke_retrieve` when retrieve_fn fails or returns malformed output.
 
     Mirrors JudgeInvocationError but tags faults with the INV-14 retrieval_*
@@ -155,11 +243,6 @@ class RetrievalInvocationError(Exception):
     so a transient retrieval outage surfaces as audit_tool_failure rather than
     aborting the audit pass (Step 13 R2 codex P2 finding).
     """
-
-    def __init__(self, fault_class: str, detail: str) -> None:
-        super().__init__(f"{fault_class}: {detail}")
-        self.fault_class = fault_class
-        self.detail = detail
 
 
 def _validate_judge_dict(
@@ -221,6 +304,26 @@ def _validate_judge_dict(
             raise JudgeInvocationError(
                 "judge_parse_error",
                 f"{source} returned VIOLATED with violated_constraint_id={vcid!r} outside the active constraint set {sorted(active_constraint_ids)}; rejecting hallucinated id (Step 13 R3 codex P2 #1)",
+            )
+    if judgment == "PARTIAL":
+        # #213: a PARTIAL MUST carry a well-formed true-partial sub_claim_breakdown.
+        # A malformed PARTIAL is a judge-output parse failure — routing it through
+        # judge_parse_error yields the existing (RETRIEVAL_FAILED, inconclusive,
+        # not_applicable, audit_tool_failure) row, never a silent bare UNSUPPORTED
+        # (which would recreate the invisible-trap failure). The malformed-PARTIAL
+        # path has no new matrix triple; it reuses the judge_parse_error contract.
+        # is_emittable_*: true-partial mix AND every item schema-shaped (non-empty
+        # sub_claim_text + valid sub_verdict). The item-shape half is required
+        # because _judge_result_entry copies items onto a *completed* row; a
+        # mix-valid-but-malformed item (e.g. missing sub_claim_text) would emit a
+        # schema-invalid row instead of taking the judge_parse_error path
+        # (ship-gate round-2 finding).
+        if not is_emittable_partial_breakdown(result.get("sub_claim_breakdown")):
+            raise JudgeInvocationError(
+                "judge_parse_error",
+                f"{source} returned PARTIAL without an emittable true-partial sub_claim_breakdown "
+                f"(>=2 schema-shaped items, >=1 SUPPORTED AND >=1 non-SUPPORTED, each with a "
+                f"non-empty sub_claim_text); got {result.get('sub_claim_breakdown')!r}",
             )
     return result
 
@@ -452,7 +555,9 @@ def _judge_result_entry(
 ) -> dict[str, Any]:
     """§4 Steps 5-6: route judge verdict to the right (judgment, defect_stage) row."""
     verdict = judge_result["judgment"]
-    rationale = judge_result.get("rationale", "")
+    # #360: a judge is an LLM with no length guarantee; clamp its rationale to
+    # the schema maxLength before it lands on the completed row (success path).
+    rationale = _bounded_judge_rationale(judge_result.get("rationale", ""))
 
     if verdict == "SUPPORTED":
         judgment, defect_stage, violated_id = "SUPPORTED", None, None
@@ -471,6 +576,17 @@ def _judge_result_entry(
         judgment = "UNSUPPORTED"
         defect_stage = "negative_constraint_violation"
         violated_id = judge_result.get("violated_constraint_id")
+    elif verdict == "PARTIAL":
+        # #213 B1 normalization: a prompt-verdict PARTIAL becomes
+        # judgment=UNSUPPORTED, defect_stage=source_description, carrying the
+        # sub_claim_breakdown[] (the machine-readable partial signal). Routing
+        # to UNSUPPORTED puts the unsupported sub-claim through the same
+        # gate-refuse path a fully-unsupported claim takes. The breakdown shape
+        # was validated true-partial in _validate_judge_dict, so INV-19 holds on
+        # the emitted completed row.
+        judgment = "UNSUPPORTED"
+        defect_stage = "source_description"
+        violated_id = None
     else:
         raise ValueError(f"unknown judge verdict: {verdict!r}")
 
@@ -493,6 +609,25 @@ def _judge_result_entry(
     }
     if violated_id is not None:
         entry["violated_constraint_id"] = violated_id
+    if verdict == "PARTIAL":
+        # Carry the decomposition onto the emitted row. Normalize each item to
+        # the schema item shape (sub_claim_text, sub_verdict, optional
+        # evidence_pointer), dropping any extra keys the judge added so the
+        # additionalProperties:false item schema holds. Presence of this field
+        # is the machine-readable partial-support signal (#213).
+        entry["sub_claim_breakdown"] = [
+            {
+                "sub_claim_text": item.get("sub_claim_text"),
+                "sub_verdict": item.get("sub_verdict"),
+                **(
+                    {"evidence_pointer": item["evidence_pointer"]}
+                    if "evidence_pointer" in item
+                    else {}
+                ),
+            }
+            for item in judge_result["sub_claim_breakdown"]
+            if isinstance(item, dict)
+        ]
     return entry
 
 
@@ -551,7 +686,10 @@ def _constraint_violation_entry(
         "scoped_manifest_id": scoped_manifest_id,
         "manifest_claim_id": manifest_claim_id,
         "judge_verdict": "VIOLATED",
-        "rationale": judge_result.get("rationale", "Constraint violated by uncited claim."),
+        # #360: clamp the judge-supplied rationale (success path) to maxLength;
+        # `or` default catches a missing/null/empty rationale (schema minLength=1).
+        "rationale": _bounded_judge_rationale(judge_result.get("rationale"))
+        or "Constraint violated by uncited claim.",
         "judge_model": judge_model,
         "judge_run_at": now_iso,
         "rule_version": DRIFT_RULE_VERSION,
@@ -900,6 +1038,19 @@ def run_audit_pipeline(
             "(spec §4 step 3 + S-INV-2 / T-P11 cap=0 rejected)"
         )
     judge_model = config.get("judge_model", "gpt-5.5-xhigh")
+    # #361: prompt_version is a judge-cache-key component. Absent key → default
+    # to JUDGE_PROMPT_SHA256, the prompt's own fingerprint and the SINGLE SOURCE
+    # OF TRUTH for cache invalidation: check_judge_prompt_version.py keeps this
+    # hash in lockstep with the judge-prompt text, so any prompt edit changes the
+    # hash and AUTOMATICALLY invalidates stale entries (the human-readable
+    # JUDGE_PROMPT_VERSION label is decoupled and must NOT gate the cache).
+    # Present-but-None → the caller declares the prompt version UNKNOWN; fail
+    # CLOSED by binding a run-local component (audit_run_id is per-run unique) so
+    # a stale entry is never served across an unknown-version boundary — cross-run
+    # hits are disabled, but within-run dedup for repeated citations still holds.
+    prompt_version = config.get("judge_prompt_version", JUDGE_PROMPT_SHA256)
+    if prompt_version is None:
+        prompt_version = f"__unknown__:{audit_run_id}"
 
     # Build the three lookup indexes once per run. Used by per-citation
     # constraint resolution + manifest-level absorption + drift detection.
@@ -1052,6 +1203,7 @@ def run_audit_pipeline(
             retrieved_excerpt=excerpt,
             active_constraints=active_constraints,
             judge_model=judge_model,
+            prompt_version=prompt_version,
         )
         # In-scope constraint ids for this call. Both fresh judge invocations
         # AND cache hits validate VIOLATED ids against this set so a

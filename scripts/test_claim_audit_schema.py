@@ -30,7 +30,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from scripts._test_helpers import (
+from tests.test_helpers import (
     build_schema_validator,
     load_json_schema,
     run_script,
@@ -257,6 +257,52 @@ class TS1ValidMinimalEntry(unittest.TestCase):
             with self.subTest(schema=name):
                 load_json_schema(path)
 
+    def test_subclaim_breakdown_optional_field_validates(self) -> None:
+        """T-S9 (#213): sub_claim_breakdown is an additive optional field."""
+        schema = load_json_schema(SCHEMA_PATHS["claim_audit_result"])
+        validator = build_schema_validator(schema)
+        entry = supported_entry()
+        entry["judgment"] = "UNSUPPORTED"
+        entry["defect_stage"] = "source_description"
+        entry["sub_claim_breakdown"] = [
+            {
+                "sub_claim_text": "n-values are reported",
+                "sub_verdict": "SUPPORTED",
+                "evidence_pointer": "p.4 Table 1",
+            },
+            {
+                "sub_claim_text": "reporting is consistent across models",
+                "sub_verdict": "UNSUPPORTED",
+                "evidence_pointer": None,
+            },
+        ]
+        errors = list(validator.iter_errors(entry))
+        self.assertEqual(errors, [], msg=f"unexpected validation errors: {errors}")
+
+    def test_subclaim_breakdown_rejects_unknown_subfield(self) -> None:
+        """additionalProperties:false holds inside each breakdown item.
+
+        Two valid items satisfy minItems:2 so the ONLY violation is the bogus
+        subfield — this isolates additionalProperties:false from the array-length
+        constraint (round-2 review #2: a one-item fixture also tripped minItems,
+        so it would still pass even if additionalProperties were removed).
+        """
+        schema = load_json_schema(SCHEMA_PATHS["claim_audit_result"])
+        validator = build_schema_validator(schema)
+        entry = supported_entry()
+        entry["judgment"] = "UNSUPPORTED"
+        entry["defect_stage"] = "source_description"
+        entry["sub_claim_breakdown"] = [
+            {"sub_claim_text": "x", "sub_verdict": "SUPPORTED", "bogus": 1},
+            {"sub_claim_text": "y", "sub_verdict": "UNSUPPORTED"},
+        ]
+        errors = list(validator.iter_errors(entry))
+        self.assertNotEqual(errors, [], msg="expected unknown subfield to be rejected")
+        self.assertTrue(
+            any(e.validator == "additionalProperties" for e in errors),
+            msg=f"expected an additionalProperties error, got: {[e.validator for e in errors]}",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Lint-driven invariant tests share a base that writes a tmp passport,
@@ -308,7 +354,7 @@ class _LintTestBase(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# T-S2: INV-1..INV-18 paired positive + negative fixtures (claim_audit_result).
+# T-S2: INV-1..INV-19 paired positive + negative fixtures (claim_audit_result).
 # Each invariant is one subTest; baseline = SUPPORTED entry, negative cases
 # mutate the field combination the invariant forbids.
 # ---------------------------------------------------------------------------
@@ -528,6 +574,90 @@ class TS2ClaimAuditInvariants(_LintTestBase):
         e["defect_stage"] = "not_applicable"
         e["ref_retrieval_method"] = "api"
         self.assertLintFinds(build_passport(results=[e]), invariant="INV-18")
+
+    # ----- INV-19 (#213): sub_claim_breakdown pins the normalized-PARTIAL shape.
+    def _partial_entry(self) -> dict[str, Any]:
+        """True-partial UNSUPPORTED row: the INV-19 positive baseline."""
+        e = supported_entry()
+        e["judgment"] = "UNSUPPORTED"
+        e["audit_status"] = "completed"
+        e["defect_stage"] = "source_description"
+        e["sub_claim_breakdown"] = [
+            {"sub_claim_text": "a", "sub_verdict": "SUPPORTED"},
+            {"sub_claim_text": "b", "sub_verdict": "UNSUPPORTED"},
+        ]
+        return e
+
+    def test_inv_19_valid_partial_breakdown_passes(self) -> None:
+        # INV-19 positive baseline: a true-partial row is clean.
+        self.assertLintClean(build_passport(results=[self._partial_entry()]))
+
+    def test_inv_19_breakdown_on_supported_row_flagged(self) -> None:
+        # INV-19: a sub_claim_breakdown on a non-UNSUPPORTED row is illegal.
+        e = supported_entry()  # judgment=SUPPORTED, defect_stage=None
+        e["sub_claim_breakdown"] = [
+            {"sub_claim_text": "a", "sub_verdict": "SUPPORTED"},
+            {"sub_claim_text": "b", "sub_verdict": "UNSUPPORTED"},
+        ]
+        self.assertLintFinds(build_passport(results=[e]), invariant="INV-19")
+
+    def test_inv_19_breakdown_wrong_defect_stage_flagged(self) -> None:
+        # INV-19: breakdown row must carry defect_stage=source_description.
+        e = self._partial_entry()
+        e["defect_stage"] = "synthesis_overclaim"
+        self.assertLintFinds(build_passport(results=[e]), invariant="INV-19")
+
+    def test_inv_19_all_unsupported_breakdown_flagged(self) -> None:
+        # INV-19: not true-partial — needs >=1 SUPPORTED (round-1 review #2).
+        e = self._partial_entry()
+        e["sub_claim_breakdown"] = [
+            {"sub_claim_text": "a", "sub_verdict": "UNSUPPORTED"},
+            {"sub_claim_text": "b", "sub_verdict": "UNSUPPORTED"},
+        ]
+        self.assertLintFinds(build_passport(results=[e]), invariant="INV-19")
+
+    def test_inv_19_all_supported_breakdown_flagged(self) -> None:
+        # INV-19: not true-partial — needs >=1 non-SUPPORTED.
+        e = self._partial_entry()
+        e["sub_claim_breakdown"] = [
+            {"sub_claim_text": "a", "sub_verdict": "SUPPORTED"},
+            {"sub_claim_text": "b", "sub_verdict": "SUPPORTED"},
+        ]
+        self.assertLintFinds(build_passport(results=[e]), invariant="INV-19")
+
+    def test_inv_19_single_item_breakdown_flagged(self) -> None:
+        # INV-19: a decomposition with <2 items is not a true partial.
+        e = self._partial_entry()
+        e["sub_claim_breakdown"] = [
+            {"sub_claim_text": "a", "sub_verdict": "SUPPORTED"},
+        ]
+        # schema minItems:2 also rejects this; lint must independently flag it
+        # so a future schema relaxation can't silently admit a 1-item breakdown.
+        self.assertLintFinds(build_passport(results=[e]), invariant="INV-19")
+
+    def test_inv_19_breakdown_on_ambiguous_row_flagged(self) -> None:
+        # INV-19 judgment-pin isolation: AMBIGUOUS + completed + source_description
+        # passes INV-3 AND is in ALLOWED_MATRIX, so the ONLY invariant that can
+        # fire is INV-19's judgment check. This catches a partially-broken guard
+        # that forgets the judgment pin but keeps the defect_stage pin — which the
+        # SUPPORTED-row case can't catch (it also has defect_stage=None).
+        # (round-2 review #3.)
+        e = self._partial_entry()
+        e["judgment"] = "AMBIGUOUS"  # defect_stage stays source_description
+        self.assertLintFinds(build_passport(results=[e]), invariant="INV-19")
+
+    def test_inv_19_missing_sub_verdict_not_counted_as_non_supported(self) -> None:
+        # INV-19 must NOT read a missing/out-of-enum sub_verdict as "non-SUPPORTED"
+        # (round-2 review #1). [SUPPORTED, <missing>] is NOT true-partial: it has no
+        # valid non-SUPPORTED verdict. A guard using `v != "SUPPORTED"` would wrongly
+        # accept it. The schema also rejects the missing required key, but INV-19 must
+        # independently flag the not-true-partial shape with its own tag.
+        e = self._partial_entry()
+        e["sub_claim_breakdown"] = [
+            {"sub_claim_text": "a", "sub_verdict": "SUPPORTED"},
+            {"sub_claim_text": "b"},  # sub_verdict missing -> not a valid non-SUPPORTED
+        ]
+        self.assertLintFinds(build_passport(results=[e]), invariant="INV-19")
 
 
 # ---------------------------------------------------------------------------

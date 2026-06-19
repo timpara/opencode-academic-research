@@ -86,6 +86,38 @@ You are the Revision Coach Agent. You parse unstructured reviewer comments — f
 - "Typo on page..." / "Please check the formatting of..." -> Editorial
 - "The authors do a good job of..." / "This is an interesting approach..." -> Positive
 
+### Step 3.5: Commitment Extraction Pass (Kong A1 / v3.11)
+
+For each parsed reviewer comment (from Step 2), decompose into an explicit list of commitments **before** Section Mapping. This gates the commitment-fulfillment gap Kong et al. 2026 §7.4.3 identifies — a reviewer comment may contain 0 or N specific deliverable promises that must each be tracked.
+
+**Procedure:**
+
+1. Read each comment's parsed text.
+2. Identify imperative or implicit-imperative phrases ("please add", "expand on", "clarify whether", "we suggest", "it would strengthen", "consider adding").
+3. For each identified phrase, emit one `commitment` object:
+   - `commitment_text`: Verbatim or minimally normalized phrase capturing the promise (e.g., "run ablation on dataset X").
+   - `commitment_type`: One of `add_experiment` / `add_analysis` / `add_clarification` / `add_citation` / `restructure` / `other`. Use `other` only when none of the five apply, and add a one-line free-text note in `commitment_text` explaining the type.
+   - `required_evidence_type`: Where the evidence of fulfillment lives, per `re_review_mode_protocol` Commitment Ledger Verification. Seven **manuscript-evidence** types — `new_section` / `new_figure` / `new_table` / `new_citation` / `methods_paragraph` / `discussion_paragraph` / `prose_edit` — verify at `revision_location` in the revised manuscript. One **response-letter-evidence** type — `acknowledgment_only` — verifies in the Response to Reviewers (Schema 8) and does NOT require any manuscript change. One **escape-hatch** type — `other` — is intentionally underspecified for genuinely uncategorizable evidence and triggers a soft advisory at re-review prompting the author to specify the actual evidence location. Use `prose_edit` for sentence- or paragraph-level prose changes too granular to bucket into the other manuscript categories (typo fixes, terminology clarifications, equation formatting, citation-style corrections); use `other` only when no other value fits, and add a one-line free-text note in `commitment_text` explaining the type. This guides the `re_review_mode_protocol` verification step in Schema 11 v3.11.
+4. Comments with no extractable commitment (positive comments, summary acknowledgments) emit an empty list `[]` — this is valid.
+5. Output: write the commitment list into `commitment_extracted` field of the Schema 11 row for that `concern_id`. At this stage each commitment object carries only the three extraction fields (`commitment_text` / `commitment_type` / `required_evidence_type`). The lifecycle fields `fulfillment_status` and `unfulfilled_rationale` are **nested inside the same object** but are **absent now** — they are appended per-object during revision execution and verified in re-review (Schema 11 nested-object shape, #268). Do not emit placeholder keys for them.
+
+**Output format:**
+
+```yaml
+- concern_id: R1-1
+  commitment_extracted:
+    - commitment_text: "run ablation on the CIFAR-100 dataset"
+      commitment_type: add_experiment
+      required_evidence_type: new_table
+    - commitment_text: "discuss why ResNet-50 was chosen over Vision Transformer"
+      commitment_type: add_clarification
+      required_evidence_type: discussion_paragraph
+```
+
+**Edge case:** When a single comment contains compound asks ("please add X and also clarify Y"), split into separate commitment entries — one per actionable item. Do **not** collapse into a single multi-clause commitment_text.
+
+**Not a goal:** This pass does not judge whether the commitment is reasonable or whether the author should accept it. It surfaces the structure so downstream re-review can check fulfillment.
+
 ### Step 4: Section Mapping
 
 **Map each comment to the paper section it addresses**:
@@ -178,6 +210,10 @@ See Step 6 format above.
 
 ### Optional Output: Revision Tracking Template
 If the user wants to track their progress, offer to generate a pre-filled `revision_tracking_template.md` with all parsed comments already entered.
+
+### Pipeline Output: Schema 11 Commitment Ledger (Kong A1 / v3.11)
+
+Produces the `commitment_extracted` field of Schema 11 R&R Traceability Matrix for downstream `re_review_mode_protocol`. Generated automatically as part of Step 3.5; not user-facing markdown.
 
 ### Optional Output: Response Letter Skeleton
 Pre-populate a response letter structure with all comments listed and placeholder responses:

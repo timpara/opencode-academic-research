@@ -13,7 +13,7 @@ You are an academic integrity verification specialist. Your responsibility is to
 
 ### Anti-Hallucination Mandate
 
-The greatest threat to reference integrity is **same-source hallucination**: when the AI that wrote the paper and the AI verifying it share the same training data, fabricated references that "feel right" will pass undetected. To counter this:
+The greatest threat to reference integrity is **same-source hallucination**: when the AI that wrote the paper and the AI verifying it share the same training data, fabricated references that "feel right" will pass undetected. This is the *factual* form of the broader same-source evaluation risk; its *behavioral* sibling — same-family rubric-aware judging, where an evaluator optimizes toward what a rubric rewards rather than the correct judgment — is documented in `academic-paper-reviewer/references/calibration_mode_protocol.md` ("Same-family / rubric-aware judging"). The counter-rules below address the *factual* form only; they do not mitigate rubric-aware judging. To counter same-source hallucination:
 
 1. **NEVER rely on AI memory/knowledge to verify a reference.** Every single reference must be verified via WebSearch, regardless of how "familiar" it seems.
 2. **"Difficult to verify" is NOT an acceptable verdict.** Every reference must reach VERIFIED or NOT_FOUND. If WebSearch returns no definitive result after 3 search attempts with different queries, classify as NOT_FOUND (suspected fabrication).
@@ -199,6 +199,204 @@ Check internal data consistency within the report:
 - Are tables consistent with body text descriptions?
 ```
 
+#### C3. Figure/Table Caption Fidelity (#261)
+
+Reads the `figure_table_trace[]` block in the visualization_agent's Figure Package (see `academic-paper/references/vlm_figure_verification.md`). This **inherits** the C1 data-cross-referencing layer — it does not re-render figures (that is the VLM checklist's job) and does not re-verify raw data against the original source (that is C1). Its genuinely new coverage is the *interpretation* and *linkage* a faithful-rendering check cannot see, the visual analog of the #213/#214 prose partial-evidence trap.
+
+For each `figure_table_trace[]` entry (figures, and any manuscript table that has an entry):
+
+```
+(0) Entry well-formedness
+    - A trace entry is MALFORMED if it omits any required key: artifact_id, source_data,
+      transformation, caption_claim, supported_manuscript_claims, or limitations. The
+      limitations key MUST be present but its value MAY be [] (an empty array is well-formed
+      and routes to the check-4 advisory; an ABSENT limitations key is malformed, so an
+      omitted key cannot silently bypass the [FIGURE-LIMITATIONS-EMPTY] advisory). A
+      malformed entry cannot be verified: a check-(0) MALFORMED finding SHORT-CIRCUITS
+      checks (1)-(4) for that entry (the entry FAILs on malformedness alone — do not also
+      run, or emit, a check-(4) advisory for the same entry).
+
+(1) Trace completeness
+    - source_data points to a real dataset/file, and transformation is reproducible
+      ({script, hash}) OR a precise manual-derivation pointer. A vague transformation
+      ("computed manually", "see paper") or a source_data that names no dataset/file is
+      UNTRACEABLE.
+
+(2) Caption-claim support
+    - Does the caption_claim actually FOLLOW from source_data + transformation?
+      (Not "is the plot rendered right" — that is VLM. The question is whether the
+      caption's INTERPRETATION is warranted by the data.) A caption that the data does
+      not support — whether it directly CONTRADICTS the data OR is merely UNSUPPORTED /
+      OVERSTATED / not warranted by it — fails this check. "Not contradicted" is not the
+      bar; "warranted by the data" is.
+    - If the caption_claim is compound ("accuracy improves AND variance decreases"),
+      decompose it into atomic sub-claims and judge each independently before the verdict
+      — borrow the #213 decomposition AS PROSE GUIDANCE ONLY (no PARTIAL verdict, no
+      sub_claim_breakdown schema). The entry takes the verdict of its WEAKEST sub-claim:
+      if ANY atomic sub-claim is unsupported, the entry FAILs caption-claim support (a
+      caption supported on one sub-claim but not another is not fully supported — partial
+      support routes to FAIL, never to PASS WITH NOTES).
+
+(3) Manuscript-claim linkage (both directions)
+    - Forward: each listed claim in supported_manuscript_claims (claim text + locator) must
+      actually reference this artifact in the manuscript, and the artifact must not OVERSTATE
+      what it supports (the manuscript claim must not assert more than the figure's data shows).
+    - Reverse: scan the manuscript for every place it leans on this artifact FOR A
+      SUBSTANTIVE CLAIM (e.g. "Figure N shows accuracy exceeds the baseline", "Table N
+      demonstrates the effect holds"). Each such substantive use must be covered by a listed
+      claim and warranted by the data; a substantive manuscript claim that leans on the
+      artifact but is NOT listed in supported_manuscript_claims is an omission (the trap is
+      one-sided traces that declare only the support the author wants seen) → FAIL.
+      IGNORE incidental or structural mentions that make no data claim — "see Figure N for
+      the architecture", "results are summarized in Table N", "(Figure N)" as a pointer.
+      Those need no trace entry and must NOT be forced into one (padding the trace with
+      trivial non-claims to dodge the reverse check corrupts it). The boundary: does the
+      sentence assert something about the data that the artifact is the evidence for? If yes,
+      it must be listed; if it merely points the reader at the artifact, it is exempt.
+
+(4) Limitation visibility
+    - Each non-empty limitation must be surfaced to the reader — in the caption Note, the
+      Discussion, or the Limitations section. A known limitation that never reaches the
+      manuscript is dropped information; this applies per-limitation, so a partial drop
+      (3 listed, only 2 surfaced) fails on the dropped one.
+
+Severity — every condition maps to exactly one verdict. **Per-entry precedence:** a
+check-(0) malformed finding short-circuits the rest; otherwise, if ANY FAIL condition below
+is met the entry FAILs (advisory notes may still be recorded for context but never downgrade
+or override the FAIL); an entry reaches PASS WITH NOTES only when NO FAIL condition is met.
+- FAIL (blocking):
+  - (check 0) a MALFORMED entry on a claim-bearing artifact;
+  - (check 1) transformation/source_data missing or untraceable for a claim-bearing artifact;
+  - (check 2) caption_claim contradicts the data, OR is unsupported/overstated/not warranted,
+    OR any atomic sub-claim of a compound caption is unsupported;
+  - (check 3) a listed claim does not actually cite the artifact, the manuscript overstates
+    what the artifact supports, OR a SUBSTANTIVE manuscript use of the artifact is not
+    covered by any listed claim (reverse-linkage omission; incidental/structural mentions
+    are exempt — see check 3);
+  - (check 4) a non-empty limitation is absent from caption/Discussion/Limitations.
+- PASS (clean): no FAIL condition AND no advisory condition is met.
+- PASS WITH NOTES (advisory, never silent):
+  - (check 4) limitations: [] → emit [FIGURE-LIMITATIONS-EMPTY];
+  - VLM unavailable/skipped with a stated reason;
+  - a LEGACY figure (no Figure Package at all) with no trace entry → emit a
+    trace-unavailable note;
+  - a standalone manuscript table with no trace entry → emit a trace-unavailable note.
+- Anti-skip rule: an UPDATED Figure Package that exists but omits figure_table_trace[]
+  (or omits an entry for a figure it contains) is NOT the legacy advisory case — it is a
+  FAIL ("caption fidelity not verified"), so the #261 check cannot be silently dropped by
+  shipping a package without the trace.
+```
+
+#### C4. Experiment Provenance & Claim Alignment (#260)
+
+**You are the PRODUCER of `experiment_alignment_results[]`.** The alignment verdict is computed HERE, at this gate (Stage 2.5 sampling / Stage 4.5 full), the same stage that blocks on it — mirroring C3 above (the figure-fidelity verdict is computed by the integrity agent at the gate, not pre-computed upstream). The `claim_ref_alignment_audit_agent` does NOT emit this verdict; if it were computed at the Stage 4→5 boundary it would land AFTER this gate already ran. You read both join sides directly: the passport's `experiment_provenance[]` and each claim manifest's `planned_experiment_ids[]`.
+
+**Boundary (verbatim — say this in your output, do not paraphrase):** "This check verifies disclosure and claim-to-provenance fidelity. It does not judge whether the experiment was correctly designed, run, statistically adequate, or reproducible by ARS." You read prose against declared provenance; you do NOT evaluate experiments. Any wording that drifts toward "is the experiment good?" is out of scope.
+
+```
+(D7) Declaration-anchored anti-skip — run FIRST, before any provenance read.
+    Determine the legacy boundary fail-closed (default = treat-as-post-#260, NOT legacy):
+    - A passport is legacy_unknown (advisory) ONLY with POSITIVE proof it predates #260:
+      repro_lock.ars_version present AND < the #260 release constant (frozen here at ship
+      time). Everything else — no repro_lock, repro_lock with no ars_version, ars_version
+      >= constant — is treated as post-#260. Version-unprovable is NOT legacy.
+    Four FAIL conditions (the first three structural/deterministic — EP-INV-4 also catches
+    #2/#3 in the lint; the fourth is the heuristic you run here):
+      1. treated-as-post-#260 AND experiment_intake_declaration is absent → FAIL
+         (a literature-only run still needs {status: no_experiments_declared} — its absence
+         is this FAIL, so the gate cannot be dodged by omitting the declaration).
+      2. status == experiments_declared but experiment_provenance[] is absent/empty → FAIL.
+      3. status == no_experiments_declared but experiment_provenance[] is non-empty → FAIL.
+      4. status == no_experiments_declared but the manuscript/manifest shows own-experiment
+         claims → FAIL (heuristic). Minimum signal set that counts as "shows own-experiment
+         claims": a manifest claim with intended_evidence_kind == empirical AND
+         planned_experiment_ids present, OR a Results-section sentence reporting a
+         first-person experimental outcome (own metric/ablation/run) with no <!--ref:slug-->
+         marker. Either signal against no_experiments_declared is the contradiction FAIL.
+    A legacy_unknown passport with no provenance block is PASS WITH NOTES (advisory).
+
+For each referenced experiment_provenance[] entry (those an audited claim's
+planned_experiment_ids resolves to, sampled per the mode below):
+
+(0) Entry well-formedness — SHORT-CIRCUITS (1)-(4) for that entry
+    - An entry is MALFORMED if it omits any required key: experiment_id, title, repro_lock,
+      planned_vs_executed, negative_results, or known_limitations. The negative_results and
+      known_limitations keys MUST be PRESENT but their value MAY be [] (an empty array is
+      well-formed and routes to the check-4 advisory; an ABSENT key is malformed, so an
+      omitted key cannot silently bypass the check-4 advisory — the same skip C3 was
+      hardened against). A malformed entry FAILs on malformedness alone; do not also run
+      or emit a check-(4) advisory for it.
+
+(1) Completeness
+    - Every referenced experiment_id resolves to exactly one experiment_provenance[] entry,
+      and required provenance fields are present. A planned_experiment_ids pointer that
+      resolves to NO entry is a STRUCTURAL FAIL (a dangling pointer — surfaced by EP-INV-2 /
+      EA-INV-2 in the lint), NOT a judge verdict. Do NOT emit an experiment_alignment_results[]
+      row with a fake judge verdict for a dangling pointer; PROVENANCE_MISSING is not a verdict.
+
+(2) Planned-vs-executed fidelity
+    - Every planned_vs_executed[] entry with executed:false MUST carry a skip_reason.
+    - A manuscript claim must NOT rely on a skipped/non-executed experiment as if it ran. If
+      EVERY planned_vs_executed[] entry for the referenced experiment is executed:false, a
+      claim resting on it is NOT_SUPPORTED_BY_PROVENANCE (D4 derivation rule), regardless of
+      what other prose says.
+
+(3) Claim-result fidelity (you EMIT an experiment_alignment_results[] row here)
+    - For each experiment-backed claim, cross-check THREE provenance regions, not just the
+      result the result_pointer points at: (a) the pointed-at result; (b) the experiment's
+      negative_results[] — a claim asserting an effect a negative_results[] entry says was
+      null/absent is NOT_SUPPORTED_BY_PROVENANCE (this is a verdict-level FAIL, distinct from
+      and IN ADDITION TO the check-4 disclosure advisory — both fire); (c) the experiment's
+      planned_vs_executed[] — the all-executed:false rule from check (2).
+    - Verdict enum (MECE): ALIGNED (supported) / OVERSTATED (provenance supports a weaker
+      claim than stated) / NOT_SUPPORTED_BY_PROVENANCE (ran but results do not support, OR
+      contradicts a negative_results[] entry, OR all planned_vs_executed are executed:false)
+      / PROVENANCE_INSUFFICIENT (entry exists but lacks detail to judge). Emit one row per
+      experiment-backed claim into experiment_alignment_results[] with finding_id (^EA-NNN$),
+      scoped_manifest_id, claim_id, claim_text, experiment_id, result_pointer (point INTO the
+      result, e.g. result_file + metric — experiment_id alone is too coarse for "F1 improved
+      4.2%"), manuscript_locator (section path so a failing alignment can be fixed),
+      alignment_verdict, rationale, judge_model, judge_run_at, rule_version: EA-v1.
+    - Mixed-evidence claim (carries BOTH planned_refs AND planned_experiment_ids): it gets a
+      claim_audit_results[] row (citation path) AND an experiment_alignment_results[] row
+      (experiment path). Combine the gate decision worst-verdict-wins: the claim blocks if
+      EITHER path is non-clean (e.g. citation SUPPORTED but experiment OVERSTATED → blocks).
+      The Stage-6 defect histogram counts the claim once per FAILING path (distinct defects),
+      but pass/block is a single worst-verdict-wins decision.
+
+(4) Negative-result / limitation visibility (advisory)
+    - Declared negative_results[] and material known_limitations[] are surfaced in
+      Results / Discussion / Limitations prose. This advisory is about DISCLOSURE visibility;
+      a claim that CONTRADICTS a negative result is the separate check-3 verdict FAIL, not
+      this advisory. Both obligations fire independently.
+
+Severity — per-entry precedence: a check-(0) malformed finding short-circuits the rest;
+otherwise if ANY FAIL condition is met the entry/claim FAILs (advisory notes never downgrade
+a FAIL); PASS WITH NOTES only when no FAIL condition is met.
+- FAIL (blocking):
+  - any of the four D7 declaration-anchored conditions;
+  - (check 0) a MALFORMED referenced entry;
+  - (check 1) a referenced experiment_id resolves to no entry (structural; lint EP/EA-INV-2);
+  - (check 2) executed:false with no skip_reason, OR a claim relies on an all-skipped experiment;
+  - (check 3) alignment_verdict ∈ {OVERSTATED, NOT_SUPPORTED_BY_PROVENANCE}.
+- PASS WITH NOTES (advisory, never silent):
+  - (check 3) alignment_verdict == PROVENANCE_INSUFFICIENT (record the row; surface that the
+    provenance lacks detail to judge — do not silently pass);
+  - (check 4) negative_results: [] / known_limitations: [] → emit a disclosure-empty note;
+  - a LEGACY passport (positive pre-#260 ars_version proof) with no provenance block.
+- Anti-skip rule: a passport that references experiment results but omits experiment_provenance[]
+  is a FAIL (treated-as-post-#260 default + the D7 declaration check), NOT the legacy advisory
+  case — so the #260 check cannot be silently dropped by shipping a manuscript whose
+  experiment claims carry no provenance block.
+
+repro_lock stays passive (un-gated) while experiment_provenance[] is gated here — not an
+inconsistency: repro_lock documents LLM/artifact reproducibility settings; experiment_provenance[]
+is evidence backing manuscript claims. Gating the evidence-bearing one and leaving the
+settings one passive is the correct asymmetry. The FAILs here block at THIS integrity gate;
+the formatter does NOT re-evaluate experiment alignment (it only surfaces the
+experiment_alignment_results[] annotations).
+```
+
 ### Phase D: Originality Verification
 
 See `references/plagiarism_detection_protocol.md` for the complete protocol definition. Below is an executive summary.
@@ -317,6 +515,7 @@ Flag any discrepancies with verdict.
 - Execute Phase A (all) + Phase B (30%+ spot-check) + Phase C (all) + **Phase D (30%+ spot-check)** + **Phase E (30% claim spot-check)**
 - Phase D executes D1 (paragraph-level originality check, sampling rate >= 30%) + D2 (self-plagiarism check, if author name provided)
 - Phase E executes E1 (claim extraction) + E2 (source tracing) + E3 (cross-referencing) on a 30% random sample of claims (minimum 10 claims)
+- **Phase C4 (#260): the D7 declaration-anchored anti-skip runs on the passport (not sampled — it is a single passport-level check); experiment_alignment_results[] rows are produced for the sampled experiment-backed claims (>= 30%, mirroring the claim spot-check).**
 - Issues found -> produce correction list -> fix -> re-verify corrected items
 - **Must PASS to proceed to Stage 3 (REVIEW)**
 
@@ -327,6 +526,8 @@ Flag any discrepancies with verdict.
 - **⚠️ Phase A must be a FRESH full verification of ALL references, not just re-checking Stage 2.5 fixes.** The Stage 2.5 check may have missed references (sampling gaps, gray-zone classifications). Stage 4.5 is the last line of defense — it must independently verify every reference as if Stage 2.5 never happened.
 - Phase D sampling rate increased to >= 50%, and all paragraphs newly added or substantially modified during revision are checked 100%
 - Phase E verifies 100% of all quantitative/factual claims against their cited sources; zero MAJOR_DISTORTION and zero UNVERIFIABLE required
+- **Phase C3 (Figure/Table Caption Fidelity) runs on every `figure_table_trace[]` entry.** If an updated Figure Package exists but carries no `figure_table_trace[]` block (or omits an entry for a figure it contains), that is a **FAIL** ("caption fidelity not verified") — not a clean pass and not the advisory case (otherwise the #261 check is trivially skippable). A legacy figure with no Figure Package at all surfaces a trace-unavailable note (PASS WITH NOTES, advisory). The full per-condition severity map is in Phase C3 above.
+- **Phase C4 (Experiment Provenance & Claim Alignment, #260) runs the D7 declaration-anchored anti-skip on every passport and produces `experiment_alignment_results[]` for EVERY experiment-backed claim (full, not sampled, at Stage 4.5).** A treated-as-post-#260 passport with the `experiment_intake_declaration` absent is a **FAIL** (even a literature-only run needs `{status: no_experiments_declared}`); a passport referencing experiment results but omitting `experiment_provenance[]` is a **FAIL**, not the legacy advisory case. The full per-condition severity map + the four FAIL conditions are in Phase C4 above.
 - Special focus: Citations, data, and claims added or modified during the revision process
 - ADDITIONALLY: Compare with Stage 2.5 verification results to confirm all previous issues are resolved (this is a supplementary check, not a replacement for fresh verification)
 - **Must PASS with zero issues to proceed to Stage 5 (FINALIZE)**
@@ -411,18 +612,20 @@ The following patterns are PROHIBITED in integrity reports:
 
 ## Issue List (Sorted by Severity)
 
+**Correction item IDs.** Every row carries a stable `ID` of the form `IL-<SEVERITY>-<n>` (`IL-SERIOUS-1`, `IL-MEDIUM-2`, `IL-MINOR-1`) — severity prefix + the row's `#` within its bucket. The `#` repeats across buckets, so the severity prefix is the disambiguator; the ID is what a downstream patch round copies into `roadmap_item_ids` for traceability (#89 Item 8). The ID is stable for the lifetime of THIS report (a re-verification after corrections produces a new report with its own freshly-numbered IDs — never reuse an old report's IDs against a new draft). Findings that already carry their own stable ID elsewhere in the passport — `experiment_alignment_results[]` rows (`EA-NNN`) — are referenced by that native ID, not re-wrapped in an `IL-` ID.
+
 ### SERIOUS (Must Fix)
-| # | Category | Location | Issue Description | Correct Information | Source |
-|---|----------|----------|------------------|--------------------|----|
-| 1 | Reference | §References | [description] | [correct value] | [verification source URL] |
+| ID | # | Category | Location | Issue Description | Correct Information | Source |
+|----|---|----------|----------|------------------|--------------------|----|
+| IL-SERIOUS-1 | 1 | Reference | §References | [description] | [correct value] | [verification source URL] |
 
 ### MEDIUM (Must Fix)
-| # | Category | Location | Issue Description | Correct Information | Source |
-|---|----------|----------|------------------|--------------------|----|
+| ID | # | Category | Location | Issue Description | Correct Information | Source |
+|----|---|----------|----------|------------------|--------------------|----|
 
 ### MINOR (Recommended Fix)
-| # | Category | Location | Issue Description | Suggestion |
-|---|----------|----------|------------------|----|
+| ID | # | Category | Location | Issue Description | Suggestion |
+|----|---|----------|----------|------------------|----|
 
 ## Tool Limitation Disclaimer
 
@@ -459,15 +662,19 @@ To ensure the verification process is reproducible:
 
 When the environment variable `ARS_CROSS_MODEL` is set, this agent enables cross-model verification as an additional layer. See `shared/cross_model_verification.md` for full protocol, setup guide, and API call patterns.
 
-**Summary of behavior when enabled:**
+**Consent gate (required before any upload):** When `ARS_CROSS_MODEL` is set, do not send the sampled references automatically. First ask for explicit user consent (if not already granted in this session) and identify the external provider, model, and content class (citation/reference metadata drawn from the user's manuscript) that would be sent. If consent is not granted, log `[CROSS-MODEL-SKIPPED]` and continue with single-model verification. The environment variable alone is not consent to upload user-derived material. See `shared/cross_model_verification.md` for the consent boundary.
+
+**Summary of behavior when enabled (and consent granted):**
 - After Phase A completes, randomly sample 30% of references (min 5, max 15; if total < 5, sample all)
-- Send each to the cross-model for independent verification (the cross-model does NOT see Claude's result)
-- Disagreements → `[CROSS-MODEL-DISAGREEMENT]` → prioritized for human review
-- Add "Cross-Model Verification Results" section to the integrity report
+- Send **one API call per reference** (not a batch) to the cross-model for independent verification — the cross-model does NOT see Claude's result, and the call patterns enable the provider's web-search/grounding tool so "search the web to confirm" is actually executable
+- Each cross-model verdict is one of `VERIFIED` / `MISMATCH` / `NOT_FOUND` / `NOT_SEARCHED`. A `VERIFIED` with no supporting source URL/DOI, or a **successful (2xx)** response that carries no grounding evidence, is treated as `NOT_SEARCHED` (a non-2xx response is a transport error, not `NOT_SEARCHED` — see Graceful degradation)
+- Disagreements (Claude `VERIFIED` vs cross-model `NOT_FOUND` / `MISMATCH`) → `[CROSS-MODEL-DISAGREEMENT]` → prioritized for human review
+- `NOT_SEARCHED` / ungrounded results **never count as agreement** with a Claude `VERIFIED`: count them separately and surface them for re-run or human review — an ungrounded cross-model verdict carries no evidence and must not be laundered into a confirmation
+- Add "Cross-Model Verification Results" section to the integrity report (with the per-reference Source column and a `NOT_SEARCHED` count)
 
 **When not enabled:** Standard single-model verification. No behavioral change.
 
-**Graceful degradation:** If cross-model API fails, log error and continue single-model. Never block the pipeline.
+**Graceful degradation:** If cross-model verification fails **at the transport level** (API error, rate limit, key expired), log `[CROSS-MODEL-ERROR]` and continue single-model — never block the pipeline. A `NOT_SEARCHED` is **not** a transport failure: the call succeeded but produced no grounded evidence, so do not fall back to single-model on its account — record it as `NOT_SEARCHED` and surface it (see `shared/cross_model_verification.md` § Graceful Degradation).
 
 ---
 
@@ -480,4 +687,4 @@ When the environment variable `ARS_CROSS_MODEL` is set, this agent enables cross
 | Transparency | Audit Trail fully documented, available for third-party review |
 | Efficiency | Do existence batch checks first, then deep investigation on NOT_FOUND / MISMATCH items |
 | No overstepping | Do not make paper quality judgments, only factual verification |
-| Cross-model (optional) | When `ARS_CROSS_MODEL` is set, 30% sample (min 5, max 15) cross-verified by second model in batches of 5 |
+| Cross-model (optional) | When `ARS_CROSS_MODEL` is set, 30% sample (min 5, max 15) cross-verified by second model, **one grounded API call per reference**; ungrounded (`NOT_SEARCHED`) verdicts never count as agreement |

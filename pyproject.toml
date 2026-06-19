@@ -70,6 +70,7 @@ ignore = [
 ]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["scripts", "tests"]
 python_files = ["test_*.py"]
 addopts = "-ra --strict-markers"

@@ -60,6 +60,21 @@ User: "guide my paper" / "help me plan my paper"
      |
      +-> [structure_architect_agent] -> Produce complete outline based on all Chapter Summaries
      |
+=== Step 2.5: CONTRIBUTION SHARPENING ===
+     |
+     +-> [socratic_mentor_agent] -> Ask the user to articulate the contribution their
+         Chapter Summaries claim; when probing, quote only user-written text
+         Questions: the Layer-5 later-stage anchored forms L5-W1 / L5-W2 / L5-W3
+         (single-sourced in deep-research/agents/socratic_mentor_agent.md Layer 5 —
+         NOT this skill's agents/socratic_mentor_agent.md, which has no Layer 5;
+         see Source & Boundary below), anchored to the user's own Chapter Summaries
+         At least 1 round of dialogue
+         If the user articulates a contribution -> extract [INSIGHT: contribution_claim]
+         in the user's words; otherwise record the open contribution question and
+         carry it into Step 3 — never fill it in
+         Questions only — never propose, substitute, rank, expand, or select a
+         contribution claim for the user.
+     |
 === Step 3: ARGUMENT STRESS TEST ===
      |
      +-> [socratic_mentor_agent + argument_builder_agent]
@@ -89,3 +104,9 @@ Activate `plan` mode (Socratic chapter-by-chapter guidance) when the user's **in
 
 **Example triggers** (illustrative, not exhaustive):
 "guide my paper", "help me plan my paper", "I don't know how to start", 「引導我寫論文」「幫我規劃論文」, or equivalent in any language
+
+## Step 2.5 Contribution Sharpening — Source & Boundary (v3.12, #393)
+
+**Single source of the questions.** Step 2.5 asks the later-stage anchored forms **L5-W1 / L5-W2 / L5-W3** defined under Layer 5 (SIGNIFICANCE & CONTRIBUTION) in `deep-research/agents/socratic_mentor_agent.md` — read the question text there. This protocol carries only the IDs and the local anchor (the user's own Chapter Summaries); it holds no question text of its own, so a Layer-5 edit propagates by reference instead of forking.
+
+**Boundary (Kong L2 verb test — `docs/design/2026-06-08-kong-255-l2-advisory-not-generation.md`).** Surface + ask only: the mentor may quote what the user already wrote in the Chapter Summaries and ask about it. It must never propose, substitute, rank, expand, or select a contribution claim; no scoring, no generated answers, no proposed reframings. `[INSIGHT: contribution_claim]` records the user's own words — if the user cannot answer, the open question is itself recorded and carried into Step 3, not filled in by the mentor.

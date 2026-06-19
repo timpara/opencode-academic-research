@@ -37,9 +37,18 @@ except ImportError as e:
     )
     sys.exit(2)
 
+# Dual-path import (mirrors arxiv_client.py): the v3.10 laundering guard
+# (#329) lives in check_v3_10_policy and is wired here so it runs over REAL
+# passport entries, not just fixtures.
+try:
+    from check_v3_10_policy import assert_venue_type_source_clean
+except ImportError:
+    from scripts.check_v3_10_policy import assert_venue_type_source_clean
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENTRY_SCHEMA_PATH = REPO_ROOT / "shared/contracts/passport/literature_corpus_entry.schema.json"
 REJECTION_SCHEMA_PATH = REPO_ROOT / "shared/contracts/passport/rejection_log.schema.json"
+TERMINAL_POLICIES_SCHEMA_PATH = REPO_ROOT / "shared/contracts/passport/terminal_policies.schema.json"
 EXAMPLES_ROOT = REPO_ROOT / "scripts/adapters/examples"
 
 
@@ -84,7 +93,11 @@ def _safe_load_yaml(path: Path) -> tuple[Any, str | None]:
         return None, f"{path}: cannot read file: {e}"
 
 
-def validate_passport(path: Path, entry_schema: dict[str, Any]) -> list[str]:
+def validate_passport(
+    path: Path,
+    entry_schema: dict[str, Any],
+    terminal_policies_schema: dict[str, Any] | None = None,
+) -> list[str]:
     errors: list[str] = []
     data, parse_err = _safe_load_yaml(path)
     if parse_err:
@@ -98,6 +111,25 @@ def validate_passport(path: Path, entry_schema: dict[str, Any]) -> list[str]:
             f"{path}: passport YAML must be a mapping (got {type(data).__name__})"
         )
         return errors
+    # v3.10 (spec §3 PR-B item 1, R2-P1): validate the passport-level
+    # terminal_policies block BEFORE iterating entries. An absent block is the
+    # all-advisory backward-compat default (Invariant 7) — nothing to check.
+    # A present block must validate against terminal_policies.schema.json; a
+    # non-mapping value (null / list / string) is an error, never silently
+    # ignored (codex Q3).
+    if terminal_policies_schema is not None and "terminal_policies" in data:
+        tp = data["terminal_policies"]
+        if not isinstance(tp, dict):
+            errors.append(
+                f"{path}: 'terminal_policies' must be a mapping "
+                f"(got {type(tp).__name__})"
+            )
+        else:
+            tp_validator = _build_validator(terminal_policies_schema)
+            for err in tp_validator.iter_errors(tp):
+                errors.append(
+                    f"{path}: terminal_policies schema validation error: {err.message}"
+                )
     if "literature_corpus" not in data:
         errors.append(
             f"{path}: missing required 'literature_corpus' key (a passport must declare it, even as an empty list)"
@@ -114,6 +146,20 @@ def validate_passport(path: Path, entry_schema: dict[str, Any]) -> list[str]:
             errors.append(
                 f"{path}: literature_corpus[{i}] schema validation error: {err.message}"
             )
+        # v3.10 laundering guard (R2-P1, #329): the schema types venue_type_source
+        # as a non-empty string but cannot express the lookup-index exclusion, so
+        # the semantic check runs here over real entries. A trusted_source_declared
+        # entry whose venue_type_source names a lookup index (OpenAlex / Crossref /
+        # Semantic Scholar) is laundering a k=3-unmatched signal into declared trust.
+        # Only run on string fields — a non-string venue_type_source / provenance is
+        # already a schema-type error (reported above); the semantic guard must not
+        # crash on it (.strip() on a non-str), so let the schema error stand alone.
+        if isinstance(entry, dict):
+            vts = entry.get("venue_type_source", "")
+            vtp = entry.get("venue_type_provenance", "")
+            if isinstance(vts, str) and isinstance(vtp, str):
+                for problem in assert_venue_type_source_clean(vts, vtp):
+                    errors.append(f"{path}: literature_corpus[{i}]: {problem}")
         key = entry.get("citation_key") if isinstance(entry, dict) else None
         if key:
             citation_keys[key] = citation_keys.get(key, 0) + 1
@@ -146,13 +192,17 @@ def validate_rejection_log(path: Path, log_schema: dict[str, Any]) -> list[str]:
 
 
 def scan_examples(
-    entry_schema: dict[str, Any], log_schema: dict[str, Any]
+    entry_schema: dict[str, Any],
+    log_schema: dict[str, Any],
+    terminal_policies_schema: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not EXAMPLES_ROOT.exists():
         return errors
     for passport in EXAMPLES_ROOT.glob("*/expected_passport.yaml"):
-        errors.extend(validate_passport(passport, entry_schema))
+        errors.extend(
+            validate_passport(passport, entry_schema, terminal_policies_schema)
+        )
     for log in EXAMPLES_ROOT.glob("*/expected_rejection_log.yaml"):
         errors.extend(validate_rejection_log(log, log_schema))
     return errors
@@ -174,15 +224,18 @@ def main() -> int:
 
     entry_schema = load_schema(ENTRY_SCHEMA_PATH)
     log_schema = load_schema(REJECTION_SCHEMA_PATH)
+    terminal_policies_schema = load_schema(TERMINAL_POLICIES_SCHEMA_PATH)
 
     errors: list[str] = []
     if args.passport:
-        errors.extend(validate_passport(args.passport, entry_schema))
+        errors.extend(
+            validate_passport(args.passport, entry_schema, terminal_policies_schema)
+        )
     if args.rejection_log:
         errors.extend(validate_rejection_log(args.rejection_log, log_schema))
 
     if not args.passport and not args.rejection_log:
-        errors.extend(scan_examples(entry_schema, log_schema))
+        errors.extend(scan_examples(entry_schema, log_schema, terminal_policies_schema))
 
     if errors:
         for e in errors:

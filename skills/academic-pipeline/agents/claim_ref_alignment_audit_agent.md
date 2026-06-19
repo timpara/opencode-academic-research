@@ -11,6 +11,8 @@ You are the L3 (claim faithfulness) auditor for the ARS pipeline. Your responsib
 
 **You audit; you do not arbitrate.** Your job is to produce evidence-bound verdicts (SUPPORTED / UNSUPPORTED / AMBIGUOUS / RETRIEVAL_FAILED + a specific `defect_stage`) plus uncited / drift / constraint-violation surfaces. You do not decide whether the paper passes — that is the formatter's job, driven by your annotation severity tier.
 
+**Experiment-backed claims are NOT yours to judge (#260).** A claim whose manifest entry carries `planned_experiment_ids[]` is backed by the scholar's own experiment provenance, not by a retrieved reference. Its faithfulness verdict (`experiment_alignment_results[]` with verdict ∈ {ALIGNED, OVERSTATED, NOT_SUPPORTED_BY_PROVENANCE, PROVENANCE_INSUFFICIENT}) is computed by the **`integrity_verification_agent` at the Stage 2.5/4.5 gate** (mirroring the #261 figure-fidelity pattern), NOT here. You must (a) NOT emit any `experiment_alignment_results[]` row, and (b) NOT misroute an experiment-only sentence into `claim_audit_results[]` or `uncited_assertions[]` just because it has no `<!--ref:slug-->` marker — see the D4-c carve-out below and the Manifest cross-reference precedence rule. A **mixed-evidence** claim (manifest entry carries BOTH `planned_refs` AND `planned_experiment_ids`) DOES get your normal citation-path treatment for its cited portion (a `claim_audit_results[]` row); the experiment path is the integrity agent's separate row, and the gate combines them worst-verdict-wins. Mixed-evidence is the ONE case where the same claim legitimately appears on both sides.
+
 External motivation: Zhao et al. arXiv:2605.07723 (2026-05) documents 146,932 hallucinated citations across 2025 arXiv / bioRxiv / SSRN / PMC, naming **L3 (claim faithfulness)** as the load-bearing unsolved problem. v3.7.3 closed the locator channel (per-citation anchor markers); v3.8 closes the audit channel (judge-evaluated alignment against the retrieved reference text).
 
 Spec: `docs/design/2026-05-15-issue-103-claim-alignment-audit-spec.md`.
@@ -130,15 +132,20 @@ cache_key = SHA-256(JCS(
     "retrieved_excerpt_hash":   SHA-256(retrieved_excerpt),
     "active_constraints_hash":  SHA-256(JCS(active_constraints_for_(manifest_id, claim_id))),
     "judge_model":              judge_model,
+    "prompt_version":           prompt_version,
   }
 ))
 ```
 
 Selection is scoped by `(scoped_manifest_id, claim_id)`, NOT bare `claim_id` — per M-INV-1, cross-manifest C-001 collision is permitted, so selecting by bare claim_id would pick constraints from the wrong manifest.
 
+`prompt_version` (#361): the fingerprint of the judge prompt this verdict was produced under. `judge_model` and `prompt_version` are separate components — they are independent axes of judge behavior. The pipeline reads `config.judge_prompt_version`, falling back to the repo constant `JUDGE_PROMPT_SHA256` (`scripts/_claim_audit_constants.py`) — the SHA-256 of the canonical judge-prompt section and the SINGLE SOURCE OF TRUTH for cache invalidation: `scripts/check_judge_prompt_version.py` keeps that hash in lockstep with the prompt text, so any prompt edit automatically changes the cache key and a verdict cached under the old prompt is never served against the new prompt logic — no reliance on a human remembering to bump a label. (`JUDGE_PROMPT_VERSION` is a separate human-readable label for logs/diffs only; it is decoupled from the cache key and must NOT be used as the fallback — keying on it would let a forgotten label bump leave stale entries valid.) When the caller declares the version unknown (`null`), the pipeline binds a run-local component (`audit_run_id`) instead, failing **closed**: cross-run hits are disabled (no stale entry served across an unknown-version boundary) while within-run dedup for repeated citations still holds. `scripts/check_judge_prompt_version.py` is the CI backstop against forgetting the hash re-pin.
+
 `active_constraints_for_(manifest_id, claim_id)`: the **manifest's** `manifest_negative_constraints[]` UNION that manifest's `claims[].negative_constraints[]` entry whose `claim_id` matches; sorted by `constraint_id`. Each constraint is projected to `{constraint_id, rule}` before hashing — the in-runtime `scope` tag (MNC vs NC) is excluded so cache hits survive cosmetic re-tagging of an unchanged rule body.
 
-**Cache stores only judge-verdict + source-bound fields**; never run-local identifiers. Cached fields: `judgment`, `audit_status`, `defect_stage`, `rationale`, `judge_model`, `judge_run_at`, `ref_retrieval_method`, `violated_constraint_id`. Excluded (rebuilt from current-run context on replay): `claim_id`, `audit_run_id`, `upstream_owner_agent`, `upstream_dispute`, `anchor_value`.
+**Cache stores only judge-verdict + source-bound fields**; never run-local identifiers. Cached fields: `judgment`, `audit_status`, `defect_stage`, `rationale`, `judge_model`, `judge_run_at`, `ref_retrieval_method`, `violated_constraint_id`, `sub_claim_breakdown`. Excluded (rebuilt from current-run context on replay): `claim_id`, `audit_run_id`, `upstream_owner_agent`, `upstream_dispute`, `anchor_value`. **`sub_claim_breakdown` MUST be cached (#213):** it is the machine-readable partial-support signal and is source-bound (a function of claim + excerpt, not the run); omitting it would replay a normalized-PARTIAL row as a bare `UNSUPPORTED` on a cache hit, silently re-opening the partial-evidence trap.
+
+This "never run-local identifiers" rule governs the cached **value**. It is NOT contradicted by the #361 cache-**key** exception: when the prompt version is declared unknown, `audit_run_id` is deliberately folded into the `prompt_version` key component (`__unknown__:<audit_run_id>`) to fail closed — disabling cross-run hits for an unknown prompt. That is an intentional run-local term in the KEY, not the value; do not "tidy" it away.
 
 - **Hit**: load cached judge-verdict + source-bound block; assemble a complete `claim_audit_result` by joining with current-run identifiers. Do NOT invoke the judge.
 - **Miss**: proceed to Step 4-5; write only the judge-verdict + source-bound block into the cache; emit the joined entry.
@@ -158,9 +165,13 @@ The located passage is what the judge sees. If `quote` mode fails to locate the 
 
 ### Step 5 — Judge invocation
 
-The judge is invoked ONCE per citation with both the alignment question and the active-constraints set in the same call. The unified contract produces a single verdict in `{SUPPORTED, UNSUPPORTED, AMBIGUOUS, VIOLATED}` so the pipeline can dispatch on it without a second round-trip.
+The judge is invoked ONCE per citation with both the alignment question and the active-constraints set in the same call. The unified contract produces a single verdict in `{SUPPORTED, UNSUPPORTED, AMBIGUOUS, PARTIAL, VIOLATED}` so the pipeline can dispatch on it without a second round-trip.
+
+**Verdict priority — VIOLATED outranks PARTIAL.** If an active constraint is violated, the verdict is VIOLATED regardless of how the sub-claims decompose. Step 0 decomposition still runs (it informs the rationale), but the citation-level verdict and routing take the VIOLATED path unchanged. PARTIAL is emitted ONLY when no active constraint is violated — it shares SUPPORTED's "no constraint violated" precondition and differs only in that the reference supports some sub-claims but not others.
 
 **Unified judge prompt** (canonical):
+
+<!-- JUDGE-PROMPT-CANONICAL-START (#361): scripts/check_judge_prompt_version.py hashes the text between these markers; any change here MUST bump JUDGE_PROMPT_VERSION in scripts/_claim_audit_constants.py so stale judge-cache entries are not served against the new prompt. -->
 
 > Given this claim from a paper draft, this excerpt from the cited reference, AND the author's declared negative constraints, return ONE verdict.
 >
@@ -170,13 +181,25 @@ The judge is invoked ONCE per citation with both the alignment question and the 
 > ANCHOR VALUE: {anchor_value}
 > ACTIVE CONSTRAINTS: {active_constraints[]}  # each entry: {constraint_id, rule}
 >
+> STEP 0 — DECOMPOSE: First break CLAIM into its atomic sub-claims (1..N). A compound
+> claim ("X rose, AND the effect held across Y") has multiple sub-claims; a simple claim
+> has one. Judge each sub-claim independently against the excerpt BEFORE you choose the
+> citation-level verdict. A reference that supports one sub-claim but not another is a
+> PARTIAL, not a SUPPORTED — do not collapse a compound claim to a single binary check.
+>
 > Output ONE of:
-> - SUPPORTED — the reference directly supports the claim AND no active constraint is violated
+> - SUPPORTED — the reference directly supports EVERY sub-claim AND no active constraint is violated
 > - UNSUPPORTED — the reference does NOT support the claim (source says something different or contradictory)
 > - AMBIGUOUS — the reference is related but does not clearly support or contradict the claim
+> - PARTIAL — the reference supports SOME sub-claims but not others (≥1 supported AND ≥1 not supported), with NO active constraint violated
 > - VIOLATED — the claim violates one of the active constraints (regardless of whether the reference supports it)
 >
 > When verdict ≠ SUPPORTED, output an optional `defect_stage_hint` from `{source_description, metadata, citation_anchor, synthesis_overclaim}` (UNSUPPORTED only) or omit it. When verdict = VIOLATED, output a `violated_constraint_id` from the ACTIVE CONSTRAINTS set.
+>
+> When verdict = PARTIAL, you MUST also output a SUB_CLAIM_BREAKDOWN block — one line
+> per sub-claim, in the form `- <sub_claim_text> :: <SUPPORTED|UNSUPPORTED|AMBIGUOUS> :: <evidence_pointer or ->`.
+> A PARTIAL breakdown with fewer than 2 sub-claims, or without ≥1 SUPPORTED AND ≥1
+> non-SUPPORTED line, is malformed and handled per Step 6.
 >
 > Then output ONE SENTENCE rationale.
 >
@@ -185,8 +208,13 @@ The judge is invoked ONCE per citation with both the alignment question and the 
 > JUDGMENT: <one-of>
 > DEFECT_STAGE_HINT: <one-of-or-omitted>
 > VIOLATED_CONSTRAINT_ID: <one-of-active-or-omitted>
+> SUB_CLAIM_BREAKDOWN:        # required iff JUDGMENT = PARTIAL; omit otherwise
+> - <sub_claim_text> :: <SUPPORTED|UNSUPPORTED|AMBIGUOUS> :: <evidence_pointer or ->
+> - <sub_claim_text> :: <SUPPORTED|UNSUPPORTED|AMBIGUOUS> :: <evidence_pointer or ->
 > RATIONALE: <one sentence>
 > ```
+
+<!-- JUDGE-PROMPT-CANONICAL-END (#361) -->
 
 VIOLATED short-circuits alignment classification: the pipeline always routes VIOLATED to either `claim_audit_result` (cited path) or `constraint_violation` (uncited path) regardless of any `defect_stage_hint`.
 
@@ -207,6 +235,7 @@ When the alignment judge returns SUPPORTED / UNSUPPORTED / AMBIGUOUS, classify `
 | UNSUPPORTED | `citation_anchor` | source content correct, but the cited anchor (page/section/quote) points to the wrong passage |
 | UNSUPPORTED | `synthesis_overclaim` | source content correct, but the draft over-strengthens the claim (e.g., "shows" instead of "suggests") |
 | UNSUPPORTED | `negative_constraint_violation` | the judge returned VIOLATED on a cited claim (INV-7 + INV-8) |
+| PARTIAL → UNSUPPORTED | `source_description` | reference supports some sub-claims but not all; normalized to `judgment=UNSUPPORTED`, emits `sub_claim_breakdown[]` (issue #213, INV-19) |
 | RETRIEVAL_FAILED | `retrieval_existence` | retrieval API reports `not_found` (INV-12) |
 | RETRIEVAL_FAILED | `not_applicable` | covers (a) anchor=none (INV-6); (b) paywall (INV-10); (c) audit_tool_failure (INV-14) — discriminated by `ref_retrieval_method` |
 
@@ -216,6 +245,10 @@ When the alignment judge returns SUPPORTED / UNSUPPORTED / AMBIGUOUS, classify `
 - VIOLATED ignores hint entirely and forces `defect_stage=negative_constraint_violation`.
 
 These coercions keep the §3.1 allowed-matrix invariant intact when the judge returns a defect_stage the matrix forbids for that verdict.
+
+**PARTIAL normalization (#213).** A prompt-verdict `PARTIAL` is normalized to a `claim_audit_result` row with `judgment=UNSUPPORTED, defect_stage=source_description`, carrying a parsed `sub_claim_breakdown[]` (one item per `SUB_CLAIM_BREAKDOWN` line: `sub_claim_text`, `sub_verdict`, optional `evidence_pointer`). Normalizing to UNSUPPORTED is deliberate: it routes the unsupported sub-claim through the same gate-refuse path a fully-unsupported claim takes, so partial support is never silently accepted as full resolution. The **presence of `sub_claim_breakdown[]` — not the `defect_stage` value — is the machine-readable partial-support signal** for downstream consumers; `source_description` is a neutral matrix-compatible stage, not a semantic claim that the partial-ness lives in the defect_stage. This triple `(UNSUPPORTED, completed, source_description)` is already in the §3.1 allowed-matrix, so PARTIAL adds no matrix/INV row; INV-19 pins the breakdown shape.
+
+**Malformed PARTIAL.** If the judge returns `PARTIAL` but the `SUB_CLAIM_BREAKDOWN` is absent, has fewer than 2 lines, or is not true-partial (no SUPPORTED line, or no non-SUPPORTED line), the pipeline does NOT coerce it to a bare `UNSUPPORTED` — that would recreate the invisible-trap failure #213 exists to close. A malformed PARTIAL is a **judge-output parse failure**: the runtime raises it as the existing `judge_parse_error` fault class, which routes to the standard `(RETRIEVAL_FAILED, inconclusive, not_applicable)` row with `ref_retrieval_method=audit_tool_failure` and a `judge_parse_error:` rationale prefix (MED-WARN advisory, surfaced for re-run; INV-14). It does NOT invent a new matrix triple — there is no `(PARTIAL, inconclusive, …)` or `(UNSUPPORTED, inconclusive, …)` triple in §3.1, so reusing `judge_parse_error` is the only contract-valid inconclusive route. A PARTIAL without an inspectable decomposition means "the judge could not complete the decomposition", not "the judge said unsupported." INV-19 therefore never sees a malformed breakdown on a `completed` row (it never reaches a completed row at all).
 
 **Three out-of-band finding categories** use their own entry-type schemas (NOT `claim_audit_result` defect_stages):
 
@@ -257,6 +290,7 @@ Three-condition token rule. A sentence in the emitted draft becomes an `uncited_
 1. **Quantifier or empirical-claim verb present**: numbers / percentages / explicit quantifiers (`50%`, `two-thirds`, `most`, `several`), OR verbs like `showed`, `demonstrated`, `observed`, `proved`, `confirmed`.
 2. **No `<!--ref:slug-->` marker on this sentence AND no marker on its adjacent clause**. The wrapper `detect_uncited_assertions` accepts an optional `adjacent_text` field on every input dict; when supplied, the surrounding-clause window is scanned for `<!--ref:slug-->` markers with the same condition-2 regex. A marker in `adjacent_text` filters the candidate out (the adjacent clause owns the citation). Callers that do NOT supply `adjacent_text` keep the original single-sentence behavior. The Step 9 e2e wiring in `scripts/test_e2e_claim_audit.py` exercises both paths.
 3. **Not a definitional sentence** (sentences containing `refers to` / `is defined as` / `we define` / `for the purposes of` are excluded — definitions don't need refs).
+4. **Not an experiment-backed claim (#260)**: a sentence whose owning manifest claim carries `planned_experiment_ids[]` (an own-experiment result — "F1 improved 4.2%" backed by the scholar's provenance, not a missing citation) is EXEMPT from `uncited_assertion` flagging. Such a sentence legitimately has no `<!--ref:slug-->` marker because its evidence is `experiment_provenance[]`, audited by the integrity gate's `experiment_alignment_results[]` (Role Definition, #260) — NOT a citation it forgot. Flagging it as uncited would be a false positive that double-reports an already-audited claim. The exemption is keyed on manifest membership: link the sentence to its `(scoped_manifest_id, manifest_claim_id)` and check whether that claim carries `planned_experiment_ids`; only then exempt. A sentence with an empirical quantifier that is NOT a manifest experiment claim still flags normally (the carve-out is narrow — it does not become a blanket "any number escapes the detector").
 
 Pseudocode (matches the production implementation at `scripts/uncited_assertion_detector.py`):
 
@@ -280,6 +314,8 @@ def detect_uncited(sentence):
 The implementation diverges from the original 4-line pseudocode in four places: (a) bare-number matches go through a year/version/section guard before counting as quantifiers (the unguarded `\b\d+(?:\.\d+)?%?` shape produced false positives on `2026` / `v3.7.3` / `section 3.1.2`); (b) `RE_REF_MARKER` is a broad presence probe `<!--\s*ref:[^\s>][^>]*?-->` — it accepts any `<!--ref:...-->` shape whose slug payload begins with a non-whitespace non-`>` character (so hyphenated slugs like `smith-et-al-2026`, digit-leading slugs, and annotations like `<!--ref:slug ok-->` all short-circuit), and rejects HTML comments that use `ref:` as a label rather than a citation marker (e.g. `<!-- ref: $analysis -->`). The v3.7.3 strict validator in `scripts/check_v3_7_3_three_layer_citation.py` polices the precise slug shape; the detector's job here is presence detection, not validation; (c) trigger tokens are returned in left-to-right document order; (d) the wrapper `detect_uncited_assertions` scans the optional `adjacent_text` field for a `<!--ref:slug-->` marker via the same condition-2 regex and suppresses the candidate when the surrounding clause carries the citation (Step 9 closure). All four divergences are pinned by `scripts/test_uncited_assertion.py`.
 
 Per D4-c last paragraph: **manifest membership does NOT exempt a sentence from being flagged**. A sentence in the manifest's `claims[]` that fires the token rule still produces an `uncited_assertion` entry; `manifest_claim_id` + `scoped_manifest_id` link back to the manifest row (U-INV-4) but the LOW-WARN advisory still emits.
+
+**The #260 experiment carve-out (condition 4) is NOT a weakening of this rule — it is orthogonal.** "Manifest membership does not exempt" is about *bare presence in `claims[]`*: an ordinary empirical claim that happens to be registered in the manifest is still flagged, so registration cannot become a no-citation back door. The carve-out keys on a *different property* — whether the owning claim carries `planned_experiment_ids[]`, i.e. whether the sentence's evidence is the scholar's `experiment_provenance[]` (audited by the integrity gate) rather than a missing literature citation. A manifest claim WITHOUT `planned_experiment_ids` is flagged exactly as before; only the experiment-backed subset is exempt, and only because flagging it would double-report a claim the `experiment_alignment_results[]` path already covers. If the `planned_experiment_ids` value dangles (resolves to no `experiment_provenance[]` entry — EP-INV-2), the sentence does NOT earn the exemption: a claim citing a non-existent experiment is no better evidenced than an uncited one, so it flags normally and the dangling pointer also surfaces structurally at EP-INV-2.
 
 Cross-array precedence (D-INV-4): when a sentence is both uncited AND drift-flagged, only the `uncited_assertion` entry emits.
 

@@ -7,6 +7,9 @@ docs/superpowers/
 # not be committed.
 .context/
 .codex-rounds/
+# Session resume / hand-off checkpoints (repo-root only). Private working-process
+# notes; must never reach the public repo.
+/checkpoints/
 
 # Python bytecode / pytest cache.
 __pycache__/
@@ -23,5 +26,8 @@ node_modules/
 package-lock.json
 bun.lockb
 
-# Private ROADMAP lives in claude-memory-sync (花花/roadmaps/), not this public repo
+# Private ROADMAP is intentionally gitignored and maintained outside this public repo
 ROADMAP.md
+
+# Local tooling scratch directory (not part of the project)
+.gstack/

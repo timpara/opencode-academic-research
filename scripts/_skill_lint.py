@@ -1,8 +1,17 @@
-"""Shared helpers for SKILL.md frontmatter linting.
+"""Shared helpers for SKILL.md frontmatter linting + cross-lint H2-section
+literal checks.
 
-Used by check_data_access_level.py and check_task_type.py to validate
-that every top-level SKILL.md declares a required metadata field with
-a value drawn from a closed vocabulary.
+Frontmatter helpers (check_data_access_level.py, check_task_type.py)
+validate that every top-level SKILL.md declares a required metadata field
+drawn from a closed vocabulary.
+
+`h2_section_body` / `check_section_literals` are the H2 line-walk variant
+shared by the block-scoped string-check lints (check_394, check_390): the
+"named H2 must exist and carry every load-bearing literal" pattern. This is
+ONE of several section extractors in scripts/ — the heading-level / regex /
+fence-aware variants (check_392, check_216, check_firm_rules_sync) are
+deliberately not interchangeable with this plain line-walk and are not
+consolidated here.
 """
 from __future__ import annotations
 
@@ -119,6 +128,40 @@ def check_metadata_field(
                 f"must be one of {sorted(legal_values)}"
             )
     return violations
+
+
+def h2_section_body(text: str, heading: str) -> str | None:
+    """Return the BODY of the H2 starting with `heading` (heading line
+    excluded) up to the next H2, or None when the heading is absent. The
+    section boundary is explicit: a line is a boundary iff it starts a new
+    H2 (`## `); internal H3s and code fences are part of the body."""
+    body: list[str] = []
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith(heading):
+            in_section = True
+            continue
+        if in_section and line.startswith("## "):
+            break
+        if in_section:
+            body.append(line)
+    return "\n".join(body) if in_section else None
+
+
+def check_section_literals(invariant: int, text: str, heading: str,
+                           label: str,
+                           literals: dict[str, str]) -> list[str]:
+    """The named H2 section must exist and carry every load-bearing literal.
+    Shared by the block-scoped string-check lints (check_394, check_390)."""
+    section = h2_section_body(text, heading)
+    if section is None:
+        return [f"invariant {invariant}: {label} section '{heading}' missing"]
+    return [
+        f"invariant {invariant}: {label} section lost the "
+        f"{name} literal ({literal!r})"
+        for name, literal in literals.items()
+        if literal not in section
+    ]
 
 
 def run_lint(field: str, legal_values: set[str] | frozenset[str], ok_message: str) -> int:

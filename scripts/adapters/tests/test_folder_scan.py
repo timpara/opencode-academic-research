@@ -185,11 +185,8 @@ def test_mixed_valid_invalid_in_nested_tree(tmp_path):
 
 
 def test_symlink_pointing_outside_input_does_not_crash(tmp_path):
-    # Self-audit: Codex round-1 deferred symlinks but my P2b fix used
-    # f.resolve().relative_to(input_root), which raises ValueError when a
-    # symlink target lives outside input_root. The hardened impl uses
-    # f.relative_to(args.input) on the un-resolved path and falls back to
-    # basename if even that fails.
+    # Symlinks escaping the scanned root can disclose files the user did not
+    # intend to include, so they are rejected instead of followed.
     import os
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -201,15 +198,28 @@ def test_symlink_pointing_outside_input_does_not_crash(tmp_path):
     r_out = tmp_path / "r.yaml"
     r = _run("--input", str(inside), "--passport", str(p_out), "--rejection-log", str(r_out))
     assert r.returncode == 0, r.stderr
+    import json
     import yaml
+    import jsonschema
     with p_out.open() as f:
-        doc = yaml.safe_load(f)
-    assert len(doc["literature_corpus"]) == 1
-    # The symlink's filename is what's parsed (Smith2024_link.pdf), not the
-    # target's filename. Citation key derives from filename, so 'link' tail
-    # appears as the title-hint contribution.
-    assert doc["literature_corpus"][0]["citation_key"] == "smith2024link"
-    assert doc["literature_corpus"][0]["source_pointer"].startswith("file://")
+        passport = yaml.safe_load(f)
+    with r_out.open() as f:
+        rejection = yaml.safe_load(f)
+    assert passport == {"literature_corpus": []}
+    assert rejection["rejected"] == [{
+        "detail": "symlink resolves outside the input root",
+        "missing_fields": [],
+        "raw": "Smith2024_link.pdf",
+        "reason": "other",
+        "source": "Smith2024_link.pdf",
+    }]
+    # The emitted rejection log must satisfy the rejection-log contract, not
+    # just be crash-free — a non-enum reason would pass the run but break the
+    # schema (Codex follow-up to #310).
+    schema = json.loads(
+        (REPO_ROOT / "shared/contracts/passport/rejection_log.schema.json").read_text()
+    )
+    jsonschema.validate(rejection, schema)
 
 
 def test_parseable_non_pdf_extension(tmp_path):
@@ -227,3 +237,24 @@ def test_parseable_non_pdf_extension(tmp_path):
         doc = yaml.safe_load(f)
     assert len(doc["literature_corpus"]) == 1
     assert doc["literature_corpus"][0]["citation_key"] == "kim2020book"
+
+
+# --- v3.10 venue_type always unknown/unknown (spec §3 PR-B item 13) ---
+
+def test_folder_scan_venue_type_always_unknown(tmp_path, load_yaml):
+    """A filename scan carries no structured type → every entry is unknown/unknown,
+    never inferred from the filename (R-L3-2-D)."""
+    passport_out = tmp_path / "passport.yaml"
+    rejection_out = tmp_path / "rejection_log.yaml"
+    r = _run(
+        "--input", str(FIXTURE_DIR),
+        "--passport", str(passport_out),
+        "--rejection-log", str(rejection_out),
+    )
+    assert r.returncode == 0, r.stderr
+    got = load_yaml(passport_out)
+    entries = got["literature_corpus"]
+    assert entries, "fixture should produce at least one accepted entry"
+    for e in entries:
+        assert e["venue_type"] == "unknown"
+        assert e["venue_type_provenance"] == "unknown"
