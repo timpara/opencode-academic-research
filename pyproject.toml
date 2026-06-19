@@ -1,6 +1,6 @@
 [project]
 name = "opencode-academic-research"
-version = "3.9.4.2.post1"
+version = "3.13.0.post1"
 description = "Academic research verification and integrity scripts. Citation alignment audits, temporal integrity, claim-faithfulness gates, and bibliography client adapters (Semantic Scholar, OpenAlex, Crossref)."
 readme = "README.md"
 license = { text = "CC-BY-NC-4.0" }
