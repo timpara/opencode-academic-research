@@ -83,6 +83,32 @@ The `academic-paper` skill should produce a literature review section.
 
 If neither happens, see [Troubleshooting](#5-troubleshooting).
 
+---
+
+## Material Passport `literature_corpus[]` adapters (v3.6.4+, optional)
+
+If you maintain a curated literature corpus (Zotero, Obsidian, PDF folder, etc.), you can package it into a Material Passport so Phase 1 agents check your library before querying external databases. This is opt-in and presence-based — without a corpus, ARS uses external-DB-only flow unchanged.
+
+Three reference Python adapters ship in `scripts/adapters/`:
+
+```bash
+# Install adapter deps (already in pyproject.toml dev extras)
+uv sync --extra dev
+
+# Run an adapter matching your corpus source
+uv run python scripts/adapters/folder_scan.py --input /path/to/pdfs --passport passport.yaml --rejection-log rejection_log.yaml
+uv run python scripts/adapters/zotero.py      --input export.json   --passport passport.yaml --rejection-log rejection_log.yaml
+uv run python scripts/adapters/obsidian.py    --input ~/Notes/Lit   --passport passport.yaml --rejection-log rejection_log.yaml
+```
+
+Each adapter produces `passport.yaml` (Schema 9, `literature_corpus[]` filled) and `rejection_log.yaml` (always emitted; empty when no rejections). For other corpus sources, write a custom adapter following [`academic-pipeline/references/adapters/overview.md`](../academic-pipeline/references/adapters/overview.md).
+
+---
+
+## Optional environment variables (v3.5.1+)
+
+ARS exposes several opt-in flags, all OFF by default; setting them affects only the current session.
+
 ### Environment flags reference
 
 | Flag | Since | What it does | Reference |

@@ -6,7 +6,33 @@ The history below this section is the upstream `Imbad0202/academic-research-skil
 changelog, reproduced verbatim. Entries prefixed `opencode.` apply to this
 port only and document packaging / runtime differences from upstream.
 
-## [v3.9.4.2-opencode.1] (2026-05-21) — OpenCode port
+## [3.13.0] (2026-06-19) — Upstream merge + OpenCode integration fixes
+
+Merged upstream `v3.9.4.2` → `v3.13.0` (136 commits). All upstream
+workflow content, agent prompts, and Python verification scripts now
+at v3.13.0 parity.
+
+**OpenCode integration fixes (Phases 1–6)**
+
+- Phase 1: Fixed all 6 CI workflows for OpenCode layout (`pip install -e
+  ".[dev]"`, path triggers, guard-component check).
+- Phase 2: Rewrote `plugins/ars-session-loaded.ts` write-scope guard with
+  `tool.execute.before` hook and `ars_phase_scope_manifest.json`.
+- Phase 3: Fixed lint scripts (`check_version_consistency.py`,
+  `_skill_lint.py`, `check_v3_6_8_mark_read_commands.py`) for OpenCode layout.
+- Phase 4: Updated `docs/OPENCODE_NOTES.md` §6 and `MIGRATION.md` §4.
+- Phase 5: Plugin auto-detect, model warnings, dynamic counts.
+- Phase 6: Pinned `@opencode-ai/plugin` to `^1.15.6`.
+
+**New commands (from upstream)**
+
+- `/ars-3w` — Three-Way Triangulation verification.
+- `/ars-cache-invalidate` — Invalidate a single citation cache entry.
+- `/ars-rebuttal-audit` — Rebuttal coherence audit.
+
+---
+
+## [3.9.4.2] (2026-05-21) — Initial OpenCode port
 
 Initial port of upstream `v3.9.4.2` to OpenCode. Workflow content,
 agent prompts, and Python verification scripts are unchanged from upstream.
