@@ -86,6 +86,22 @@ function countAgents(workDir: string): number {
   }
 }
 
+/**
+ * Count *_agent.md files within a single skill directory.
+ */
+function countSkillAgents(workDir: string, skill: string): number {
+  try {
+    const { execSync } = require("node:child_process")
+    const output = execSync(
+      `find "${workDir}/skills/${skill}" -name "*_agent.md" -not -path "*/.git/*" 2>/dev/null | wc -l`,
+      { encoding: "utf-8" },
+    )
+    return parseInt(output.trim(), 10) || 0
+  } catch {
+    return 0
+  }
+}
+
 // --- Plugin ---
 
 export const ARSPlugin: Plugin = async ({ client, directory, worktree }) => {
@@ -104,9 +120,9 @@ export const ARSPlugin: Plugin = async ({ client, directory, worktree }) => {
     `Academic Research Skills (ARS) v3.13.0 loaded.`,
     ``,
     `Skills:`,
-    `  deep-research            13 agents, 8 modes`,
-    `  academic-paper           12 agents, 11 modes`,
-    `  academic-paper-reviewer   7 agents, 6 modes`,
+    `  deep-research            ${countSkillAgents(workDir, "deep-research")} agents, 8 modes`,
+    `  academic-paper           ${countSkillAgents(workDir, "academic-paper")} agents, 11 modes`,
+    `  academic-paper-reviewer   ${countSkillAgents(workDir, "academic-paper-reviewer")} agents, 6 modes`,
     `  academic-pipeline        10-stage orchestrator`,
     ``,
     `Commands: 16 (/ars-plan, /ars-full, /ars-lit-review, /ars-reviewer, ...)`,
