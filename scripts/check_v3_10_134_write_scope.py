@@ -33,6 +33,7 @@ Three invariants:
 
 Exit codes: 0 on pass, 1 on any failure.
 """
+
 from __future__ import annotations
 
 import json
@@ -121,7 +122,7 @@ def read_frontmatter_name(rel_path: str) -> str | None:
         # than scanning the body — a `name:` in prose must NOT masquerade as the binding
         # (review finding). A missing/broken frontmatter is itself a drift the lint reports.
         return None
-    block = text[fences[0].end():fences[1].start()]
+    block = text[fences[0].end() : fences[1].start()]
     m = _NAME_RE.search(block)
     return m.group(1).strip().strip('"').strip("'") if m else None
 
@@ -180,6 +181,11 @@ def run_checks() -> list[str]:
     for md in REPO_ROOT.glob("**/agents/*.md"):
         if ".git" in md.parts:
             continue
+        # OpenCode port: .opencode/agents/ holds named sub-agents used by commands
+        # (ars-researcher, ars-verifier, etc.) — not phase-pipeline agents governed
+        # by the write-scope guard. Exclude from I5 roster check.
+        if ".opencode" in md.parts:
+            continue
         # .as_posix() so the comparison uses `/` on every OS (the rosters use `/`).
         rel = md.relative_to(REPO_ROOT).as_posix()
         if rel in declared:
@@ -192,6 +198,12 @@ def run_checks() -> list[str]:
             # would fail open when its name collides with a rostered agent);
             # it falls through to the resolve path and flags as undeclared.
             canon = f"deep-research/agents/{md.name}"
+        elif rel.startswith("skills/"):
+            # OpenCode port layout: skills live under skills/<skill>/... but the
+            # rosters use bare paths (<skill>/...). Strip the prefix so a file
+            # found at skills/deep-research/agents/foo.md matches the roster
+            # entry deep-research/agents/foo.md.
+            canon = rel[len("skills/") :]
         else:
             try:
                 canon = md.resolve().relative_to(REPO_ROOT).as_posix()
@@ -257,7 +269,9 @@ def run_checks() -> list[str]:
     manifest = load_manifest()
     for key, entry in manifest.get("agents", {}).items():
         if entry.get("bucket") != "A":
-            errors.append(f"I4: manifest entry {key!r} has bucket={entry.get('bucket')!r}, expected 'A'.")
+            errors.append(
+                f"I4: manifest entry {key!r} has bucket={entry.get('bucket')!r}, expected 'A'."
+            )
         globs = entry.get("allowed_write_globs")
         if not isinstance(globs, list) or not globs:
             errors.append(f"I4: manifest entry {key!r} has empty/invalid allowed_write_globs.")

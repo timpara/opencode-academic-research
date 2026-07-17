@@ -4,6 +4,7 @@ Per v3.6.8 spec §3.6 Step 7 acceptance criteria. The lint asserts that the
 2 commands (mark-read, unmark-read) exist, carry the validation rule, and
 reference the peer-file write target — NOT the entry frontmatter.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -12,7 +13,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from tests.test_helpers import run_script
-
 
 LINT = Path(__file__).parent / "check_v3_6_8_mark_read_commands.py"
 REPO_ROOT = Path(__file__).parent.parent
@@ -44,9 +44,7 @@ class TestMarkReadCommandsLint(unittest.TestCase):
             result = run_script(LINT, cwd=root)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "ars-mark-read.md", result.stdout + result.stderr
-            )
+            self.assertIn("ars-mark-read.md", result.stdout + result.stderr)
 
     def test_missing_unmark_read_command_fails(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -57,9 +55,7 @@ class TestMarkReadCommandsLint(unittest.TestCase):
             result = run_script(LINT, cwd=root)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "ars-unmark-read.md", result.stdout + result.stderr
-            )
+            self.assertIn("ars-unmark-read.md", result.stdout + result.stderr)
 
     def test_missing_validation_rule_token_fails(self) -> None:
         """Spec §3.6 firm rule 2 + Step 7 acceptance: the command body
@@ -77,9 +73,7 @@ class TestMarkReadCommandsLint(unittest.TestCase):
             result = run_script(LINT, cwd=root)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "literature_corpus", result.stdout + result.stderr
-            )
+            self.assertIn("literature_corpus", result.stdout + result.stderr)
 
     def test_missing_peer_file_token_fails(self) -> None:
         """Spec §3.6 firm rule 1 + §3.1 firm rule 3: the command MUST
@@ -100,20 +94,22 @@ class TestMarkReadCommandsLint(unittest.TestCase):
             self.assertIn("human_read_log", result.stdout + result.stderr)
 
     def test_missing_sonnet_model_routing_fails(self) -> None:
-        """Spec §3.6 Step 7 + feedback_no_haiku.md: command frontmatter
-        MUST declare model: sonnet (NOT haiku, NOT missing)."""
+        """Routing metadata is required: either upstream model: sonnet or OpenCode
+        compatibility: opencode + agent: <name>. Removing the OpenCode compat line
+        while keeping no upstream model: sonnet must fail the lint."""
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _copy_repo_skeleton(root)
             cmd = root / "commands" / "ars-mark-read.md"
             text = cmd.read_text(encoding="utf-8")
-            mutated = text.replace("model: sonnet", "model: haiku")
+            # Strip the OpenCode routing token; no upstream model: sonnet present either.
+            mutated = text.replace("compatibility: opencode", "compatibility: REMOVED")
             cmd.write_text(mutated, encoding="utf-8")
 
             result = run_script(LINT, cwd=root)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("sonnet", result.stdout + result.stderr)
+            self.assertIn("routing", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
