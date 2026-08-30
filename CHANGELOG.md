@@ -6,7 +6,10 @@ The history below this section is the upstream `Imbad0202/academic-research-skil
 changelog, reproduced verbatim. Entries prefixed `opencode.` apply to this
 port only and document packaging / runtime differences from upstream.
 
-## [Unreleased]
+## [3.13.0-opencode.1] (2026-08-30) — First tagged release since the v3.13.0 upstream merge
+
+No release was tagged for the `v3.13.0` merge below when it landed on
+2026-06-19; this is the first tag covering it.
 
 - Fixed `install.sh` not symlinking `.opencode/agents/*.md` into
   `$XDG_CONFIG_HOME/opencode/agents/`, which left commands like
