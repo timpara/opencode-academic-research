@@ -120,6 +120,7 @@ main_install() {
     echo "Installing into: $OC_HOME"
     ensure_dir "$OC_HOME/skills"
     ensure_dir "$OC_HOME/commands"
+    ensure_dir "$OC_HOME/agents"
     ensure_dir "$OC_HOME/plugins"
 
     echo "Skills:"
@@ -134,6 +135,12 @@ main_install() {
     for f in "$REPO_ROOT/commands"/*.md; do
         [[ -f "$f" ]] || continue
         link_one "$f" "$OC_HOME/commands/$(basename "$f")"
+    done
+
+    echo "Agents:"
+    for f in "$REPO_ROOT/.opencode/agents"/*.md; do
+        [[ -f "$f" ]] || continue
+        link_one "$f" "$OC_HOME/agents/$(basename "$f")"
     done
 
     echo "Plugins:"
@@ -168,6 +175,12 @@ main_uninstall() {
     for f in "$REPO_ROOT/commands"/*.md; do
         [[ -f "$f" ]] || continue
         unlink_one "$OC_HOME/commands/$(basename "$f")"
+    done
+
+    echo "Agents:"
+    for f in "$REPO_ROOT/.opencode/agents"/*.md; do
+        [[ -f "$f" ]] || continue
+        unlink_one "$OC_HOME/agents/$(basename "$f")"
     done
 
     echo "Plugins:"

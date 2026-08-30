@@ -6,6 +6,12 @@ The history below this section is the upstream `Imbad0202/academic-research-skil
 changelog, reproduced verbatim. Entries prefixed `opencode.` apply to this
 port only and document packaging / runtime differences from upstream.
 
+## [Unreleased]
+
+- Fixed `install.sh` not symlinking `.opencode/agents/*.md` into
+  `$XDG_CONFIG_HOME/opencode/agents/`, which left commands like
+  `/ars-reviewer` erroring after a global install (#2).
+
 ## [3.13.0] (2026-06-19) — Upstream merge + OpenCode integration fixes
 
 Merged upstream `v3.9.4.2` → `v3.13.0` (136 commits). All upstream
